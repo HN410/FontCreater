@@ -76,6 +76,7 @@ class FontCheckImageProducer():
         return image
 
 class FontChecker():
+    # フォントを表示しながら、どれに対応するかを記録していくGUI
     tagListIndex = ["英数字", "記号", "かな", "JIS第一水準", "JIS第二水準", "特殊"]
     checkListColumns = 3
     def __init__(self, fontCheckImageProducer):
