@@ -75,3 +75,63 @@ class FontCheckImageProducer():
 
         return image
 
+class FontChecker():
+    tagListIndex = ["英数字", "記号", "かな", "JIS第一水準", "JIS第二水準", "特殊"]
+    checkListColumns = 3
+    def __init__(self, fontCheckImageProducer):
+        self.fontN = 0
+        self.nowInd = -1
+        self.fontList =  FontCheckImageProducer.getFontPathList()
+        self.fontN = len(self.fontList)
+        self.data = { i: [False for j in range(len(FontChecker.tagListIndex))] for i in self.fontList}
+        self.fontCheckImageProducer = fontCheckImageProducer
+    
+    def __output__(self, ax, output):
+        ax.imshow(self.fontCheckImageProducer.getFontImage(self.nowInd))
+        with output:
+            output.clear_output(wait=True)
+            display(ax.figure)
+    def __registerData__(self, checkBoxList):
+        self.data[self.fontList[self.nowInd]] = [i.value for i in checkBoxList]
+    
+    def saveData(self, path):
+        with open(path, "wb") as f:
+            pickle.dump(self.data, f)
+
+    def showWidgets(self):
+        buttonNext = widgets.Button(description='Next')
+        buttonPrev = widgets.Button(description='Prev')
+
+        checkBoxList = [ widgets.Checkbox(value= False, description = i) for i in FontChecker.tagListIndex]
+        
+        output = widgets.Output()
+        plt.figure(figsize = (100, 30))
+        ax = plt.gca()
+
+
+        def onClickNext(b: widgets.Button):
+            if(self.nowInd == self.fontN-1):
+                return
+            self.__registerData__(checkBoxList)
+            self.nowInd += 1
+            self.__output__(ax, output)
+        
+        def onClickPrev(b: widgets.Button):
+            if(self.nowInd == 0):
+                return
+            self.__registerData__(checkBoxList)
+            self.nowInd -= 1
+            self.__output__(ax, output)
+
+
+        buttonNext.on_click(onClickNext)
+        buttonPrev.on_click(onClickPrev)
+        buttonBox = widgets.Box([buttonPrev, buttonNext])
+        display(buttonBox)
+        columns = FontChecker.checkListColumns
+        for i in range(len(FontChecker.tagListIndex)//columns):
+            box = widgets.Box(checkBoxList[i*columns: (i+1)*columns])
+            display(box)
+        display(output)
+
+        buttonNext.click()
