@@ -127,6 +127,7 @@ class FontChecker():
             self.__output__(ax, output)
         
         def onClickSave(b: widgets.Button):
+            self.__registerData__(checkBoxList)
             self.saveData("checker.pkl")
 
 
