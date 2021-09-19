@@ -89,6 +89,7 @@ class FontChecker():
         self.fontCheckImageProducer = fontCheckImageProducer
     
     def __output__(self, ax, output):
+        ax.clear()
         ax.imshow(self.fontCheckImageProducer.getFontImage(self.nowInd))
         with output:
             output.clear_output(wait=True)
@@ -141,5 +142,7 @@ class FontChecker():
             box = widgets.Box(checkBoxList[i*columns: (i+1)*columns])
             display(box)
         display(output)
+
+        plt.close()
 
         buttonNext.click()
