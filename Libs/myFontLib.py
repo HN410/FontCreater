@@ -103,6 +103,7 @@ class FontChecker():
     def showWidgets(self):
         buttonNext = widgets.Button(description='Next')
         buttonPrev = widgets.Button(description='Prev')
+        buttonSave = widgets.Button(description='Save')
 
         checkBoxList = [ widgets.Checkbox(value= False, description = i) for i in FontChecker.tagListIndex]
         
@@ -124,11 +125,15 @@ class FontChecker():
             self.__registerData__(checkBoxList)
             self.nowInd -= 1
             self.__output__(ax, output)
+        
+        def onClickSave(b: widgets.Button):
+            self.saveData("checker.pkl")
 
 
         buttonNext.on_click(onClickNext)
         buttonPrev.on_click(onClickPrev)
-        buttonBox = widgets.Box([buttonPrev, buttonNext])
+        buttonSave.on_click(onClickSave)
+        buttonBox = widgets.Box([buttonPrev, buttonNext, buttonSave])
         display(buttonBox)
         columns = FontChecker.checkListColumns
         for i in range(len(FontChecker.tagListIndex)//columns):
