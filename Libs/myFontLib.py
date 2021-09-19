@@ -31,6 +31,7 @@ class FontCheckImageProducer():
     def getJISList():
         ans = []
         for path in FontCheckImageProducer.jisChineseCharas:
+            path = os.path.dirname(__file__) + "\\" + path
             data = ""
             with open(path, "r", encoding='UTF-8') as f:
                 data = f.read()
