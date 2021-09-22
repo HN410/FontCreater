@@ -11,9 +11,11 @@ class FontTools():
     ALPHANUMERICS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 
     SIGNS = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
     KANA = "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろわをんァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロワヲン"
-    def getJISList():
+    JISCHINESECHARAS = ["JIS_first.txt", "JIS_second.txt"]
+    FONTDIRS =  ["Fonts"]
+    def __getJISList__():
         ans = []
-        for path in FontCheckImageProducer.jisChineseCharas:
+        for path in FontTools.JISCHINESECHARAS:
             path = os.path.dirname(__file__) + "\\" + path
             data = ""
             with open(path, "r", encoding='UTF-8') as f:
@@ -21,26 +23,17 @@ class FontTools():
                 data = "".join(data.split("\n"))
             ans.append(data)
         return ans
-    def getFontCheckStrings():
+    def __getFontCheckStrings__():
         fontCheckStrings = [FontTools.ALPHANUMERICS + FontTools.SIGNS, 
                         FontTools.KANA
                         ]
-        fontCheckStrings += FontCheckImageProducer.getJISList()
+        fontCheckStrings += FontTools.__getJISList__()
         return fontCheckStrings
+    def __init__(self):
+        self.fontCheckStrings = FontTools.__getFontCheckStrings__()
 
-
-class FontCheckImageProducer():
-    # フォントを確認する用の画像を作るクラス
-    jisChineseCharas = ["JIS_first.txt", "JIS_second.txt"]
-    fontDirs =  ["Fonts"]
-    maxCharas = 180 # チェック時に見る最大文字数
-    charasHorizontalN = 30  # 横に並べる文字数    
-    imageUnitSize = (600, 150)
-    imageSize = (imageUnitSize[0]*2, imageUnitSize[1]*2)
-    fontSize = 20
-    
     def getFontPathList():
-        dirs = FontCheckImageProducer.fontDirs
+        dirs = FontTools.FONTDIRS
 
         l = []
         for d in dirs:
@@ -49,12 +42,22 @@ class FontCheckImageProducer():
                     l.append(os.path.join(parent, name))
         return l
 
+        
 
+
+class FontCheckImageProducer():
+    # フォントを確認する用の画像を作るクラス
+
+    maxCharas = 180 # チェック時に見る最大文字数
+    charasHorizontalN = 30  # 横に並べる文字数    
+    imageUnitSize = (600, 150)
+    imageSize = (imageUnitSize[0]*2, imageUnitSize[1]*2)
+    fontSize = 20
     
-    def __init__(self):
+    def __init__(self, fontTools: FontTools):
         # 文字数が多いカテゴリはランダムにサンプリング
-        self.fontPathList = FontCheckImageProducer.getFontPathList()
-        self.fontCheckStrings = FontTools.getFontCheckStrings()
+        self.fontPathList = FontTools.getFontPathList()
+        self.fontCheckStrings = fontTools.fontCheckStrings
         for i, string in enumerate(self.fontCheckStrings):
             if(len(string) > FontCheckImageProducer.maxCharas):
                 sampled = random.sample(list(string), FontCheckImageProducer.maxCharas)
@@ -89,7 +92,7 @@ class FontChecker():
     def __init__(self, fontCheckImageProducer):
         self.fontN = 0
         self.nowInd = -1
-        self.fontList =  FontCheckImageProducer.getFontPathList()
+        self.fontList =  FontTools.getFontPathList()
         self.fontN = len(self.fontList)
         self.data = { i: [False for j in range(len(FontChecker.tagListIndex))] for i in self.fontList}
         self.fontCheckImageProducer = fontCheckImageProducer
