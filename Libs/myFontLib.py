@@ -24,7 +24,7 @@ class FontTools():
             ans.append(data)
         return ans
     def __getFontCheckStrings__():
-        fontCheckStrings = [FontTools.ALPHANUMERICS + FontTools.SIGNS, 
+        fontCheckStrings = [FontTools.ALPHANUMERICS , FontTools.SIGNS, 
                         FontTools.KANA
                         ]
         fontCheckStrings += FontTools.__getJISList__()
@@ -33,6 +33,7 @@ class FontTools():
         self.fontCheckStrings = FontTools.__getFontCheckStrings__()
 
     def getFontPathList():
+        # Fontsフォルダ内のフォントファイルを一括取得
         dirs = FontTools.FONTDIRS
 
         l = []
@@ -57,7 +58,9 @@ class FontCheckImageProducer():
     def __init__(self, fontTools: FontTools):
         # 文字数が多いカテゴリはランダムにサンプリング
         self.fontPathList = FontTools.getFontPathList()
-        self.fontCheckStrings = fontTools.fontCheckStrings
+        self.fontCheckStrings = FontCheckImageProducer.__getFontCheckString__(fontTools)
+
+
         for i, string in enumerate(self.fontCheckStrings):
             if(len(string) > FontCheckImageProducer.maxCharas):
                 sampled = random.sample(list(string), FontCheckImageProducer.maxCharas)
@@ -70,7 +73,14 @@ class FontCheckImageProducer():
                 string = "\n".join(strList)
                 self.fontCheckStrings[i] = string
 
-
+    def __getFontCheckString__(fontTools: FontTools):
+        fontCheckStrings = fontTools.fontCheckStrings
+        ans = [""] * 4
+        ans[0] = fontCheckStrings[0] + fontCheckStrings[1]
+        for i in range(1, 4):
+            ans[i] = fontCheckStrings[i+1]
+        return ans
+    
     def getFontImage(self, ind):
         font_path = self.fontPathList[ind]
         font = PIL.ImageFont.truetype(font_path, FontCheckImageProducer.fontSize)
