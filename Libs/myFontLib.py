@@ -13,6 +13,7 @@ class FontTools():
     KANA = "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろわをんァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロワヲン"
     JISCHINESECHARAS = ["JIS_first.txt", "JIS_second.txt"]
     FONTDIRS =  ["Fonts"]
+    STANDARDFONT = "./msgothic.ttc"
     def __getJISList__():
         ans = []
         for path in FontTools.JISCHINESECHARAS:
@@ -78,6 +79,8 @@ class CharacterChooser:
                 beforeN = checkN
         return ans
 
+
+# 以下、集めたフォントの品質確認（漢字に対応するかなど）をするモジュール
 class FontCheckImageProducer():
     # フォントを確認する用の画像を作るクラス
 
