@@ -7,6 +7,27 @@ import ipywidgets as widgets
 from IPython.display import display
 import random
 
+class FontTools():
+    ALPHANUMERICS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 
+    SIGNS = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+    KANA = "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろわをんァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロワヲン"
+    def getJISList():
+        ans = []
+        for path in FontCheckImageProducer.jisChineseCharas:
+            path = os.path.dirname(__file__) + "\\" + path
+            data = ""
+            with open(path, "r", encoding='UTF-8') as f:
+                data = f.read()
+                data = "".join(data.split("\n"))
+            ans.append(data)
+        return ans
+    def getFontCheckStrings():
+        fontCheckStrings = [FontTools.ALPHANUMERICS + FontTools.SIGNS, 
+                        FontTools.KANA
+                        ]
+        fontCheckStrings += FontCheckImageProducer.getJISList()
+        return fontCheckStrings
+
 
 class FontCheckImageProducer():
     # フォントを確認する用の画像を作るクラス
@@ -28,27 +49,12 @@ class FontCheckImageProducer():
                     l.append(os.path.join(parent, name))
         return l
 
-    def getJISList():
-        ans = []
-        for path in FontCheckImageProducer.jisChineseCharas:
-            path = os.path.dirname(__file__) + "\\" + path
-            data = ""
-            with open(path, "r", encoding='UTF-8') as f:
-                data = f.read()
-                data = "".join(data.split("\n"))
-            ans.append(data)
-        return ans
-    def getFontCheckStrings():
-        fontCheckStrings = ["0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", 
-                        "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろわをんァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロワヲン", 
-                        ]
-        fontCheckStrings += FontCheckImageProducer.getJISList()
-        return fontCheckStrings
+
     
     def __init__(self):
         # 文字数が多いカテゴリはランダムにサンプリング
         self.fontPathList = FontCheckImageProducer.getFontPathList()
-        self.fontCheckStrings = FontCheckImageProducer.getFontCheckStrings()
+        self.fontCheckStrings = FontTools.getFontCheckStrings()
         for i, string in enumerate(self.fontCheckStrings):
             if(len(string) > FontCheckImageProducer.maxCharas):
                 sampled = random.sample(list(string), FontCheckImageProducer.maxCharas)
