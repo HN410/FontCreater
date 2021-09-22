@@ -44,8 +44,14 @@ class FontTools():
                     l.append(os.path.join(parent, name))
         return l
 
-        
 class CharacterChooser:
+    INITFONTSIZE = 256
+    CANVASSIZE   = (256, 256)
+    FONTSIZE = 5 * INITFONTSIZE // 6
+    BACKGROUNDRGB = (255, 255, 255)
+    TEXTRGB       = (0, 0, 0)
+    IMAGEMODE = "RGB"
+
     # フォントのパスとそのフォントが対応している文字のリストを受け取り、ランダムに扱える文字をサンプリングする
     def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list):
         self.fontTools = fontTools
@@ -59,6 +65,29 @@ class CharacterChooser:
             self.charaNList[i] = n
         self.charaAllN = n
         self.special = compatibleList[-1] # 特殊なフォントはここがtrueになる
+
+    def __getImage__(fontPath: str, text: str):
+        # 指定したフォント、文字の画像を返す
+        # まず、INITFONTSIZEで画像を作り、その文字のピクセル数を確認
+        img  = PIL.Image.new(CharacterChooser.IMAGEMODE,
+             CharacterChooser.CANVASSIZE, CharacterChooser.BACKGROUNDRGB)
+        draw = PIL.ImageDraw.Draw(img)
+        font = PIL.ImageFont.truetype(fontPath, CharacterChooser.INITFONTSIZE)
+        textWidth, textHeight = draw.textsize(text,font=font)
+
+        nextFontSize = int((CharacterChooser.FONTSIZE / textHeight) * CharacterChooser.INITFONTSIZE)
+        del img, draw, font
+        img  = PIL.Image.new(CharacterChooser.IMAGEMODE,
+             CharacterChooser.CANVASSIZE, CharacterChooser.BACKGROUNDRGB)
+        draw = PIL.ImageDraw.Draw(img)
+        font = PIL.ImageFont.truetype(fontPath, nextFontSize)
+        textWidth, textHeight = draw.textsize(text,font=font)
+
+        draw.text(((CharacterChooser.CANVASSIZE[0] -textWidth)//2,
+         (CharacterChooser.CANVASSIZE[1]-textHeight)//2),
+        text, fill=CharacterChooser.TEXTRGB, font=font)
+        return img
+
     
     def sample(self, sampleN: int):
         # このフォントが扱える文字の中から(最大)sampleN個サンプリングする
@@ -78,6 +107,18 @@ class CharacterChooser:
                     break
                 beforeN = checkN
         return ans
+    
+    def getSampledImagePair(self, sampleN: int):
+        # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
+        # 基準となるフォントのペアの画像として返す
+
+        sampleList = self.sample(sampleN)
+        ans = [[] for i in range(len(sampleList))]
+        for i, sampleCharacter in enumerate(sampleList):
+            standard = CharacterChooser.__getImage__(FontTools.STANDARDFONT, sampleCharacter)
+            target = CharacterChooser.__getImage__(self.fontPath, sampleCharacter)
+            ans[i] = [standard, target]
+        return ans 
 
 
 # 以下、集めたフォントの品質確認（漢字に対応するかなど）をするモジュール
