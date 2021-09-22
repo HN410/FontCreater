@@ -44,7 +44,39 @@ class FontTools():
         return l
 
         
-
+class CharacterChooser:
+    # フォントのパスとそのフォントが対応している文字のリストを受け取り、ランダムに扱える文字をサンプリングする
+    def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list):
+        self.fontTools = fontTools
+        self.fontPath = fontPath
+        self.compatibleList = compatibleList
+        self.charaNList = [0 for i in range(len(fontTools.fontCheckStrings))] # カテゴリごとに文字がいくつあるかを累積数で示すリスト
+        n = 0
+        for i, (string, boolean) in enumerate(zip(fontTools.fontCheckStrings, compatibleList)):
+            if boolean:
+                n += len(string)
+            self.charaNList[i] = n
+        self.charaAllN = n
+        self.special = compatibleList[-1] # 特殊なフォントはここがtrueになる
+    
+    def sample(self, sampleN: int):
+        # このフォントが扱える文字の中から(最大)sampleN個サンプリングする
+        sampleList = [i for i in range(self.charaAllN)]
+        if(sampleN < self.charaAllN):
+            # sampleNが、このフォントの対応文字数より少なかったら全部のペアを返す
+            sampleList = random.sample(sampleList, sampleN)
+        else:
+            sampleN = self.charaAllN
+        
+        ans = [""] * sampleN
+        for i, sampleInd in enumerate(sampleList):
+            beforeN = 0
+            for checkN, checkString in zip(self.charaNList, self.fontTools.fontCheckStrings):
+                if(sampleInd < checkN):
+                    ans[i] = checkString[sampleInd-beforeN]
+                    break
+                beforeN = checkN
+        return ans
 
 class FontCheckImageProducer():
     # フォントを確認する用の画像を作るクラス
