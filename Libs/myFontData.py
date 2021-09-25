@@ -14,11 +14,15 @@ class FontGeneratorDataset(data.Dataset):
         self.fontList = fontTools.getFontPathList()
         self.compatibleDict = compatibleDict
         self.imageN = imageN
+        self.resetSampleN()
     def __len__(self):
         return len(self.fontList)
     
     def __getitem__(self, index):
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                  self.compatibleDict[index])
-        sampleN = random.randint(self.imageN[0], self.imageN[1])
+        sampleN = self.sampleN
         return charaChooser.getSampledImagePair(sampleN)
+    
+    def resetSampleN(self):
+        self.sampleN = random.randint(self.imageN[0], self.imageN[1])
