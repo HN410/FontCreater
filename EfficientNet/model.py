@@ -22,6 +22,7 @@ from .utils import (
     MemoryEfficientSwish,
     calculate_output_image_size
 )
+from .map2style import Map2Style
 
 
 VALID_MODELS = (
@@ -162,7 +163,7 @@ class EfficientNetEncoder(nn.Module):
     """
 
     SAVED_FEATUREMAPS_IDX = [2, 4, 10] # encode時に用いる特徴マップのインデックス
-    EONCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
+    ENCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
 
     def __init__(self, blocks_args=None, global_params=None):
         super().__init__()
@@ -225,12 +226,16 @@ class EfficientNetEncoder(nn.Module):
         # エンコード時の1*1conv (チャンネル数変換)
         self.encode_convs = []
         self.encode_conv_params = []
-        map_channels = EfficientNetEncoder.EONCODE_MAP_CHANNELS
+        map_channels = EfficientNetEncoder.ENCODE_MAP_CHANNELS
         for i in range(len(map_channels)-1):
             conv = nn.Conv2d(in_channels=map_channels[i], out_channels=map_channels[i+1], kernel_size=1)
             self.encode_convs.append(conv)
             self.encode_conv_params.append(conv.parameters())
         self.encode_convs = nn.ModuleList(self.encode_convs)
+
+        # Map2Style
+        self.map2styles = nn.ModuleList(
+            [Map2Style(i, channelN) for i, channelN in enumerate(EfficientNetEncoder.ENCODE_MAP_CHANNELS)])
 
 
     def set_swish(self, memory_efficient=True):
@@ -316,14 +321,15 @@ class EfficientNetEncoder(nn.Module):
                 used_maps.append(x) # 場合によってはclone()すべき？
 
         # Upsample
-        ans.append(x)
+        ans.append(self.map2styles[0](x))
         used_maps.reverse()
         for idx, map in enumerate(used_maps):
             x = F.interpolate(x, scale_factor=2, mode="bilinear")
             x = self.encode_convs[idx](x)
             x += map
-            ans.append(x)
-
+            ans.append(self.map2styles[idx+1](x))
+        # これで[batchSize, 1024(256*4), 1, 1]が出力される
+        ans = torch.cat(ans, 1)
 
         return ans
 
