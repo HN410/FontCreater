@@ -161,7 +161,7 @@ class EfficientNetEncoder(nn.Module):
     """
 
     SAVED_FEATUREMAPS_IDX = [2, 4, 10] # encode時に用いる特徴マップのインデックス
-    EONCODE_MAP_CHANNELS = [24, 80, 112] # エンコードして出力するときのチャンネル数
+    EONCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
 
     def __init__(self, blocks_args=None, global_params=None):
         super().__init__()
@@ -220,6 +220,16 @@ class EfficientNetEncoder(nn.Module):
 
         # set activation to memory efficient swish by default
         self._swish = MemoryEfficientSwish()
+
+        # エンコード時の1*1conv (チャンネル数変換)
+        self.encode_convs = []
+        self.encode_conv_params = []
+        map_channels = EfficientNetEncoder.EONCODE_MAP_CHANNELS
+        for i in range(len(map_channels)-1):
+            conv = nn.Conv2d(in_channels=map_channels[i], out_channels=map_channels[i+1], kernel_size=1)
+            self.encode_convs.append(conv)
+            self.encode_conv_params.append(conv.parameters())
+
 
     def set_swish(self, memory_efficient=True):
         """Sets swish function as memory efficient (for training) or standard (for export).
@@ -306,10 +316,9 @@ class EfficientNetEncoder(nn.Module):
         # Upsample
         ans.append(x)
         used_maps.reverse()
-        for map in used_maps:
-            from IPython.core.debugger import Pdb; Pdb().set_trace()
-            
+        for idx, map in enumerate(used_maps):
             x = F.interpolate(x, scale_factor=2, mode="bilinear")
+            x = self.encode_convs[idx](x)
             x += map
             ans.append(x)
 
@@ -329,11 +338,7 @@ class EfficientNetEncoder(nn.Module):
         # Convolution layers
         x = self.extract_features(inputs)
         # Pooling and final linear layer
-        x = self._avg_pooling(x)
-        if self._global_params.include_top:
-            x = x.flatten(start_dim=1)
-            x = self._dropout(x)
-            x = self._fc(x)
+
         return x
 
     @classmethod
