@@ -6,6 +6,7 @@
 # Github repo: https://github.com/lukemelas/EfficientNet-PyTorch
 # With adjustments and added comments by workingcoder (github username).
 
+from math import e
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -229,6 +230,7 @@ class EfficientNetEncoder(nn.Module):
             conv = nn.Conv2d(in_channels=map_channels[i], out_channels=map_channels[i+1], kernel_size=1)
             self.encode_convs.append(conv)
             self.encode_conv_params.append(conv.parameters())
+        self.encode_convs = nn.ModuleList(self.encode_convs)
 
 
     def set_swish(self, memory_efficient=True):
