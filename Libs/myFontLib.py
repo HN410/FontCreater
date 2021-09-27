@@ -6,6 +6,7 @@ from ipywidgets import interact
 import ipywidgets as widgets
 from IPython.display import display
 import random
+import torchvision.transforms as transforms
 
 class FontTools():
     ALPHANUMERICS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -53,7 +54,7 @@ class CharacterChooser:
     IMAGEMODE = "RGB"
 
     # フォントのパスとそのフォントが対応している文字のリストを受け取り、ランダムに扱える文字をサンプリングする
-    def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list):
+    def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list, useTensor=False):
         self.fontTools = fontTools
         self.fontPath = fontPath
         self.compatibleList = compatibleList
@@ -65,6 +66,12 @@ class CharacterChooser:
             self.charaNList[i] = n
         self.charaAllN = n
         self.special = compatibleList[-1] # 特殊なフォントはここがtrueになる
+
+        # 画像出力時にこのtransformsにかける
+        transformList = [transforms.Grayscale()]
+        if(useTensor):
+            transformList.append(transforms.ToTensor())
+        self.transform = transforms.Compose(transformList)
 
     def __getImage__(fontPath: str, text: str):
         # 指定したフォント、文字の画像を返す
@@ -108,7 +115,7 @@ class CharacterChooser:
                 beforeN = checkN
         return ans
     
-    def getSampledImagePair(self, sampleN: int):
+    def getSampledImagePair(self, sampleN: int, useTensor= False):
         # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
         # 基準となるフォントのペアの画像として返す
 
@@ -117,6 +124,8 @@ class CharacterChooser:
         for i, sampleCharacter in enumerate(sampleList):
             standard = CharacterChooser.__getImage__(FontTools.STANDARDFONT, sampleCharacter)
             target = CharacterChooser.__getImage__(self.fontPath, sampleCharacter)
+            standard = self.transform(standard)
+            target = self.transform(target)
             ans[i] = [standard, target]
         return ans 
 
