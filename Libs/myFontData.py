@@ -11,7 +11,7 @@ class FontGeneratorDataset(data.Dataset):
         #             (例) [3, 6] ... 3~6個の中から一様分布で決定される
         #                  [4, 4] ...4個で固定
         self.fontTools = fontTools
-        self.fontList = fontTools.getFontPathList()
+        self.fontList = FontTools.getFontPathList()
         self.compatibleDict = compatibleDict
         self.imageN = imageN
         self.resetSampleN()
@@ -20,7 +20,7 @@ class FontGeneratorDataset(data.Dataset):
     
     def __getitem__(self, index):
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
-                 self.compatibleDict[index])
+                 self.compatibleDict[self.fontList[index]])
         sampleN = self.sampleN
         return charaChooser.getSampledImagePair(sampleN)
     

@@ -1,8 +1,10 @@
 
 import torch
 import torch.nn as nn
-from ..EfficientNet.model import *
-from ..StyleGAN.network import *
+import sys
+sys.path.append('../')
+from EfficientNet.model import *
+from StyleGAN.network import *
 
 
 
