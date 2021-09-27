@@ -8,6 +8,7 @@ from IPython.display import display
 import random
 import torchvision.transforms as transforms
 
+
 class FontTools():
     ALPHANUMERICS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     SIGNS = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
@@ -15,6 +16,7 @@ class FontTools():
     JISCHINESECHARAS = ["JIS_first.txt", "JIS_second.txt"]
     FONTDIRS =  ["Fonts"]
     STANDARDFONT = "./msgothic.ttc"
+
     def __getJISList__():
         ans = []
         for path in FontTools.JISCHINESECHARAS:
@@ -34,9 +36,10 @@ class FontTools():
     def __init__(self):
         self.fontCheckStrings = FontTools.__getFontCheckStrings__()
 
-    def getFontPathList():
+    @classmethod
+    def getFontPathList(cls):
         # Fontsフォルダ内のフォントファイルを一括取得
-        dirs = FontTools.FONTDIRS
+        dirs = cls.FONTDIRS
 
         l = []
         for d in dirs:
@@ -44,6 +47,26 @@ class FontTools():
                 for name in filenames:
                     l.append(os.path.join(parent, name))
         return l
+
+    @classmethod
+    def noUseClear(cls, compatibleData):
+        # 今回の訓練には使用できない（特殊な文字しか対応していない）フォントを発見し、
+        # 対応ディクショナリから削除する
+        fontList = cls.getFontPathList()
+        noUseList = []
+        for font in fontList:
+            compatibleList = compatibleData[font]
+            safe = False
+            for b in compatibleList[:-1]:
+                if b :
+                    safe = True
+                    break
+            if(not safe):
+                noUseList.append(font)
+                del compatibleData[font]
+        return noUseList, compatibleData
+    
+
 
 class CharacterChooser:
     INITFONTSIZE = 256
