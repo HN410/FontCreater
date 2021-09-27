@@ -163,42 +163,6 @@ class NoiseLayer(nn.Module):
         return x + noise * self.noise_scale
 
 
-class LatentTransformation(nn.Module):
-    def __init__(self, settings):
-        super().__init__()
-
-        self.z_dim = settings["z_dim"]
-        self.w_dim = settings["w_dim"]
-        self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
-        activation = nn.LeakyReLU(negative_slope=0.2)
-
-        use_labels = settings["use_labels"]
-
-        self.latent_transform = nn.Sequential(
-            WSConv2d(self.z_dim * 2 if use_labels else self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.z_dim, 1, 1, 0),
-            activation,
-            WSConv2d(self.z_dim, self.w_dim, 1, 1, 0),
-            activation
-        )
-
-
-    def forward(self, latent):
-        latent = latent.view([-1, self.z_dim, 1, 1])
-
-        if self.latent_normalization is not None:
-            latent = self.latent_normalization(latent)
-
-        return self.latent_transform(latent)
 
 
 class SynthFirstBlock(nn.Module):
@@ -380,15 +344,18 @@ class Generator(nn.Module):
     def __init__(self, settings):
         super().__init__()
 
-        self.latent_transform = LatentTransformation(settings)
         self.synthesis_module = SynthesisModule(settings)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
         # Truncation trick
         self.register_buffer("w_average", torch.zeros(1, settings["z_dim"], 1, 1))
         self.w_average_beta = 0.995
+        self.z_dim = settings["z_dim"]
+        self.z_kind = 4 # Encoderからz_dim個の特徴量が何組流れ込むか
         self.trunc_w_layers = 8
         self.trunc_w_psi = 0.8
+        self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
+ 
 
     # def set_level(self, level):
     #     self.synthesis_module.level.fill_(level)
@@ -397,25 +364,28 @@ class Generator(nn.Module):
         batch_size = z.size()[0]
         level = self.synthesis_module.level
 
-        w = self.latent_transform(z)
+        if self.latent_normalization is not None:
+            z = self.latent_normalization(z)
+        # zは[Batch, z_dim * 4, 1, 1]
+        z = self.expand_to_w(z)
+
+        # z becomes [B, level*2, z_dim, 1, 1]
+        # → [B, 7*2, 256, 1, 1]
+
 
         # update w_average
-        if self.training:
-            self.w_average = torch.lerp(w.mean(0, keepdim=True).detach(), self.w_average, self.w_average_beta)
+        # if self.training:
+        #     self.w_average = torch.lerp(z.mean(0, keepdim=True).detach(), self.w_average, self.w_average_beta)
 
-        # w becomes [B, level*2, z_dim, 1, 1]
-        # level*2 is because each synthesis block has two points of style inputs
-        w = w.view(batch_size, 1, -1, 1, 1)\
-            .expand(-1, level*2, -1, -1, -1)
 
         # style mixing
-        if self.training and level >= 2:
-            z_mix = torch.randn_like(z)
-            w_mix = self.latent_transform(z_mix)
-            for batch_index in range(batch_size):
-                if np.random.uniform(0, 1) < self.style_mixing_prob:
-                    cross_point = np.random.randint(1, level*2)
-                    w[batch_index, cross_point:] = w_mix[batch_index]
+        # if self.training and level >= 2:
+        #     z_mix = torch.randn_like(z)
+        #     w_mix = self.latent_transform(z_mix)
+        #     for batch_index in range(batch_size):
+        #         if np.random.uniform(0, 1) < self.style_mixing_prob:
+        #             cross_point = np.random.randint(1, level*2)
+        #             z[batch_index, cross_point:] = w_mix[batch_index]
 
         # Truncation trick
         # if not self.training:
@@ -423,15 +393,25 @@ class Generator(nn.Module):
         #                                             w[:, self.trunc_w_layers:].clone(),
         #                                             self.trunc_w_psi).clone()
 
-        fakes = self.synthesis_module(w, alpha)
+        fakes = self.synthesis_module(z, alpha)
 
         return fakes
 
     def write_histogram(self, writer, step):
-        for name, param in self.latent_transform.named_parameters():
-            writer.add_histogram(f"g_lt/{name}", param.cpu().data.numpy(), step)
+        # for name, param in self.latent_transform.named_parameters():
+        #     writer.add_histogram(f"g_lt/{name}", param.cpu().data.numpy(), step)
         self.synthesis_module.write_histogram(writer, step)
         writer.add_histogram("w_average", self.w_average.cpu().data.numpy(), step)
+
+    def expand_to_w(self, z):
+        # zは[Batch, z_dim * 4, 1, 1]
+        # これを拡大
+        batch_size = z.size()[0]
+        zs = [z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)]
+        z1 = zs[0].expand(batch_size, 2, self.z_dim, 1, 1)
+        z24 = [zs[i].expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind)]
+        return torch.cat((z1, z24[0], z24[1], z24[2]), 1)
+        
 
 
 class DBlock(nn.Module):
