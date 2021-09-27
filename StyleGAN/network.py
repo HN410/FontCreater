@@ -351,7 +351,7 @@ class Generator(nn.Module):
         self.register_buffer("w_average", torch.zeros(1, settings["z_dim"], 1, 1))
         self.w_average_beta = 0.995
         self.z_dim = settings["z_dim"]
-        self.z_kind = 4 # Encoderからz_dim個の特徴量が何組流れ込むか
+        self.z_kind = 2 # Encoderからz_dim個の特徴量が何組ずつ流れ込むか
         self.trunc_w_layers = 8
         self.trunc_w_psi = 0.8
         self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
@@ -360,14 +360,15 @@ class Generator(nn.Module):
     # def set_level(self, level):
     #     self.synthesis_module.level.fill_(level)
 
-    def forward(self, z, alpha):
-        batch_size = z.size()[0]
+    def forward(self, chara_z, style_z, alpha):
+        batch_size = chara_z.size()[0]
         level = self.synthesis_module.level
 
         if self.latent_normalization is not None:
-            z = self.latent_normalization(z)
+            chara_z = self.latent_normalization(chara_z)
+            style_z = self.latent_normalization(style_z)
         # zは[Batch, z_dim * 4, 1, 1]
-        z = self.expand_to_w(z)
+        z = self.expand_to_w(style_z, chara_z)
 
         # z becomes [B, level*2, z_dim, 1, 1]
         # → [B, 7*2, 256, 1, 1]
@@ -403,13 +404,14 @@ class Generator(nn.Module):
         self.synthesis_module.write_histogram(writer, step)
         writer.add_histogram("w_average", self.w_average.cpu().data.numpy(), step)
 
-    def expand_to_w(self, z):
+    def expand_to_w(self, chara_z, style_z):
         # zは[Batch, z_dim * 4, 1, 1]
         # これを拡大
-        batch_size = z.size()[0]
-        zs = [z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)]
+        batch_size = chara_z.size()[0]
+        zs = [chara_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] + \
+            [style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
         z1 = zs[0].expand(batch_size, 2, self.z_dim, 1, 1)
-        z24 = [zs[i].expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind)]
+        z24 = [zs[i].expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind*2)]
         return torch.cat((z1, z24[0], z24[1], z24[2]), 1)
         
 
