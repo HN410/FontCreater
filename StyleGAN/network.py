@@ -318,17 +318,21 @@ class SynthesisModule(nn.Module):
             SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
         ])
 
-        self.to_rgbs = nn.ModuleList([
-            WSConv2d(256, 3, 1, 1, 0, gain=1),
-            WSConv2d(256, 3, 1, 1, 0, gain=1),
-            WSConv2d(256, 3, 1, 1, 0, gain=1),
-            WSConv2d(128, 3, 1, 1, 0, gain=1),
-            WSConv2d(64, 3, 1, 1, 0, gain=1),
-            WSConv2d(32, 3, 1, 1, 0, gain=1),
-            WSConv2d(16, 3, 1, 1, 0, gain=1)
-        ])
+        # self.to_rgbs = nn.ModuleList([
+        #     WSConv2d(256, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(256, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(256, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(128, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(64, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(32, 3, 1, 1, 0, gain=1),
+        #     WSConv2d(16, 3, 1, 1, 0, gain=1)
+        # ])
+        self.to_monos = nn.ModuleList([
+            WSConv2d(32, 1, 1, 1, 0, gain=1),
+            WSConv2d(16, 1, 1, 1, 0, gain=1)])
+        self.level = 7
 
-        self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
+        # self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
 
     def set_noise_fixed(self, fixed):
         for module in self.modules():
@@ -337,32 +341,33 @@ class SynthesisModule(nn.Module):
 
     def forward(self, w, alpha):
         # w is [batch_size. level*2, w_dim, 1, 1]
-        level = self.level.item()
+        # levelは7の固定
+        level = self.level
 
         x = self.blocks[0](w[:, 0], w[:, 1])
 
-        if level == 1:
-            x = self.to_rgbs[0](x)
-            return x
+        # if level == 1:
+        #     x = self.to_rgbs[0](x)
+        #     return x
 
         for i in range(1, level-1):
             x = self.blocks[i](x, w[:, i*2], w[:, i*2+1])
 
         x2 = x
         x2 = self.blocks[level-1](x2, w[:, level*2-2], w[:, level*2-1])
-        x2 = self.to_rgbs[level-1](x2)
+        x2 = self.to_monos[1](x2)
 
         if alpha == 1:
             x = x2
         else:
-            x1 = self.to_rgbs[level - 2](x)
+            x1 = self.to_monos[0](x)
             x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
             x = torch.lerp(x1, x2, alpha)
 
         return x
 
     def write_histogram(self, writer, step):
-        for lv in range(self.level.item()):
+        for lv in range(self.level):
             block = self.blocks[lv]
             for name, param in block.named_parameters():
                 writer.add_histogram(f"g_synth_block{lv}/{name}", param.cpu().data.numpy(), step)
@@ -385,12 +390,12 @@ class Generator(nn.Module):
         self.trunc_w_layers = 8
         self.trunc_w_psi = 0.8
 
-    def set_level(self, level):
-        self.synthesis_module.level.fill_(level)
+    # def set_level(self, level):
+    #     self.synthesis_module.level.fill_(level)
 
     def forward(self, z, alpha):
         batch_size = z.size()[0]
-        level = self.synthesis_module.level.item()
+        level = self.synthesis_module.level
 
         w = self.latent_transform(z)
 
