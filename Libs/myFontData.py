@@ -9,6 +9,9 @@ class FontGeneratorDataset(data.Dataset):
     MEANVAR_CHARA_N = 40
     MEANVAR_FONT_N = 70
 
+    IMAGE_MEAN = 0.8893
+    IMAGE_VAR = 0.0966
+
     def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list, useTensor=True):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
@@ -21,22 +24,35 @@ class FontGeneratorDataset(data.Dataset):
         self.imageN = imageN
         self.resetSampleN()
         self.useTensor = useTensor
+
+        self.transform = transforms.Compose([
+            transforms.Normalize(self.IMAGE_MEAN, self.IMAGE_VAR)
+        ])
     def __len__(self):
         return len(self.fontList)
     
     def __getitem__(self, index):
+        # 形式は変換用の画像の組と教師用データのテンソルのリスト
+        # 変換用画像 idx:0 [1, 256, 256]の変換元画像
+        #           idx:1 [1, 256, 256]の変換後画像
+        # 教師用データ [imageN-1, 2, 1, 256, 256]のゴシック、変換後フォントの文字の画像のペアのテンソル
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                  self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
         sampleN = self.sampleN
-        return charaChooser.getSampledImagePair(sampleN)
+        imageList = charaChooser.getSampledImagePair(sampleN, self.transform)
+
+        convertedPair = imageList[0]
+        teachers = torch.stack([torch.stack(i, 0) for i in imageList[1:]], 0)
+        
+        return [convertedPair, teachers]
 
     @classmethod
-    def getCharaImagesMeanVar(cls, compatibleData):
+    def getCharaImagesMeanVar(cls, compatibleData, isMinus = False):
         # フォント画像の平均、分散を得る
 
         fontDataSet = FontGeneratorDataset(FontTools(), compatibleData, [cls.MEANVAR_CHARA_N, cls.MEANVAR_CHARA_N], useTensor=True)
         fontDataSet = iter(fontDataSet)
-        # [FONT_N, CHARA_N, 2, 3, 256, 256]
+        # [FONT_N, CHARA_N, 2, 1, 256, 256]
         data = torch.cat([torch.cat([torch.cat(j, 0) for j in list(fontDataSet.__next__())]) for i in range(cls.MEANVAR_FONT_N)])
         mean = torch.mean(data).item()
         var = torch.var(data).item()

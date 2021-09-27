@@ -138,7 +138,7 @@ class CharacterChooser:
                 beforeN = checkN
         return ans
     
-    def getSampledImagePair(self, sampleN: int, useTensor= False):
+    def getSampledImagePair(self, sampleN: int, transform = None, useTensor= False):
         # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
         # 基準となるフォントのペアの画像として返す
 
@@ -149,6 +149,9 @@ class CharacterChooser:
             target = CharacterChooser.__getImage__(self.fontPath, sampleCharacter)
             standard = self.transform(standard)
             target = self.transform(target)
+            if not (transform is None):
+                standard = transform(standard)
+                target = transform(target)
             ans[i] = [standard, target]
         return ans 
 
