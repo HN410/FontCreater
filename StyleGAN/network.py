@@ -410,8 +410,9 @@ class Generator(nn.Module):
         batch_size = chara_z.size()[0]
         zs = [chara_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] + \
             [style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
-        z1 = zs[0].expand(batch_size, 2, self.z_dim, 1, 1)
-        z24 = [zs[i].expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind*2)]
+        z1 = zs[0].view(batch_size, 1, -1, 1, 1)\
+            .expand(batch_size, 2, self.z_dim, 1, 1)
+        z24 = [zs[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind*2)]
         return torch.cat((z1, z24[0], z24[1], z24[2]), 1)
         
 
