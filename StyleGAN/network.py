@@ -3,7 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
+import os 
+import json
 
+SETTING_JSON_PATH = "./settings.json"
 
 class PixelNormalizationLayer(nn.Module):
     # チャンネル方向に正規化する
@@ -161,7 +164,7 @@ class NoiseLayer(nn.Module):
 
 
 class LatentTransformation(nn.Module):
-    def __init__(self, settings, label_size):
+    def __init__(self, settings):
         super().__init__()
 
         self.z_dim = settings["z_dim"]
@@ -188,16 +191,9 @@ class LatentTransformation(nn.Module):
             activation
         )
 
-        if use_labels:
-            self.label_embed = nn.Embedding(label_size, self.z_dim)
-        else:
-            self.label_embed = None
 
-    def forward(self, latent, labels):
+    def forward(self, latent):
         latent = latent.view([-1, self.z_dim, 1, 1])
-        if self.label_embed is not None:
-            labels = self.label_embed(labels).view([-1, self.z_dim, 1, 1])
-            latent = torch.cat([latent, labels], dim=1)
 
         if self.latent_normalization is not None:
             latent = self.latent_normalization(latent)
@@ -376,10 +372,10 @@ class SynthesisModule(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, settings, label_size):
+    def __init__(self, settings):
         super().__init__()
 
-        self.latent_transform = LatentTransformation(settings, label_size)
+        self.latent_transform = LatentTransformation(settings)
         self.synthesis_module = SynthesisModule(settings)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
@@ -392,11 +388,11 @@ class Generator(nn.Module):
     def set_level(self, level):
         self.synthesis_module.level.fill_(level)
 
-    def forward(self, z, labels, alpha):
+    def forward(self, z, alpha):
         batch_size = z.size()[0]
         level = self.synthesis_module.level.item()
 
-        w = self.latent_transform(z, labels)
+        w = self.latent_transform(z)
 
         # update w_average
         if self.training:
@@ -410,7 +406,7 @@ class Generator(nn.Module):
         # style mixing
         if self.training and level >= 2:
             z_mix = torch.randn_like(z)
-            w_mix = self.latent_transform(z_mix, labels)
+            w_mix = self.latent_transform(z_mix)
             for batch_index in range(batch_size):
                 if np.random.uniform(0, 1) < self.style_mixing_prob:
                     cross_point = np.random.randint(1, level*2)
@@ -543,3 +539,11 @@ class Discriminator(nn.Module):
             return torch.gather(x, 1, labels.view(-1, 1))
         else:
             return x.view([-1, 1])
+
+def get_setting_json():
+    dirname = os.path.dirname(__file__)
+    setting_path = os.path.join(dirname, SETTING_JSON_PATH)
+    settings = None
+    with open(setting_path) as fp:
+        settings = json.load(fp)
+    return settings
