@@ -198,9 +198,7 @@ class SynthFirstBlock(nn.Module):
         self.activation = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, w1, w2):
-        print("First size: ")
-        print(w1.size())
-        print(w2.size())
+
         batch_size = w1.size()[0]
 
         x = self.base_image.expand(batch_size, -1, -1, -1)
@@ -243,9 +241,7 @@ class SynthBlock(nn.Module):
         self.upsample_mode = upsample_mode
 
     def forward(self, x, w1, w2):
-        print("Next size: ")
-        print(w1.size())
-        print(w2.size())
+
         x = F.interpolate(x, scale_factor=2, mode=self.upsample_mode)
         x = self.conv1(x)
         if self.blur is not None:

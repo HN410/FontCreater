@@ -1,7 +1,10 @@
 
+from Libs.myFontData import FontGeneratorDataset
 import torch
 import torch.nn as nn
 import sys
+
+from torchvision import transforms
 sys.path.append('../')
 from EfficientNet.model import *
 from StyleGAN.network import *
@@ -43,12 +46,12 @@ class MyPSP(nn.Module):
         style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*4, 1, 1]
         style_pairs = [self.style_encoder(style_pairs[:, i]) for i in range(pair_n)]
-        print(style_pairs[0].size())
-        style_pairs = torch.stack(style_pairs).sum(0)
-        print(chara_images[:, :self.z_dim*2].size())
-        print(style_pairs[:, self.z_dim*2:].size())
 
-        self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], alpha)
+        style_pairs = torch.stack(style_pairs).sum(0)
+
+
+        res =  self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], alpha)
+        return torch.sigmoid(res)
 
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数
@@ -63,6 +66,12 @@ class MyPSPLoss(nn.Module):
     
     def forward(self, outputs, targets):
         # outputs, targetsともに[B, 1, W, H]
+
+        # outputsは正規化されていないので、正規化する
+        outputs = transforms.Compose([
+            transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
+                FontGeneratorDataset.IMAGE_VAR)])(outputs)
+
         ans = [0] * self.MSE_N
         ans[0] = self.MSEs[0](outputs, targets)
         # SCALE分の1した画像でも同様に二乗誤差をとってみる
@@ -72,7 +81,6 @@ class MyPSPLoss(nn.Module):
             outputs = F.interpolate(outputs, scale_factor=1/self.SCALE, mode="bilinear")
             targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
             ans[i+1] = self.MSEs[i+1](outputs, targets) * factor
-        print(ans)
         ans = torch.stack(ans)
         return torch.mean(ans)
         
