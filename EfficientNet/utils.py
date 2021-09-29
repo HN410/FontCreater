@@ -603,7 +603,10 @@ def load_pretrained_weights(model, model_name, weights_path=None, load_fc=True, 
 
     if load_fc:
         ret = model.load_state_dict(state_dict, strict=False)
-        assert not ret.missing_keys, 'Missing keys when loading pretrained weights: {}'.format(ret.missing_keys)
+
+        # Encoder用に追加したもの以外で読み込めなかったらエラー
+        assert set(ret.missing_keys) != set(list(model.encode_convs.state_dict().keys()) +\
+                     list(model.map2styles.state_dict().keys())), 'Missing keys when loading pretrained weights: {}'.format(ret.missing_keys)
     else:
         state_dict.pop('_fc.weight')
         state_dict.pop('_fc.bias')

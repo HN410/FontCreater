@@ -20,6 +20,10 @@ class MyPSP(nn.Module):
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params)
         self.chara_encoder._change_in_channels(1)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
+        load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
+                                load_fc=(True), advprop=False)
+        load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
+                                load_fc=(True), advprop=False)
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"])
