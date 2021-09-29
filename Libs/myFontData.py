@@ -60,3 +60,23 @@ class FontGeneratorDataset(data.Dataset):
     
     def resetSampleN(self):
         self.sampleN = random.randint(self.imageN[0], self.imageN[1])
+    
+
+class MyPSPBatchSampler(torch.utils.data.sampler.BatchSampler):
+    # MyPSP用のBatchSampler
+    def __init__(self, batchSize, fontGeneratorDataset):
+        self.fontGeneratorDataset = fontGeneratorDataset
+        self.len = len(fontGeneratorDataset)
+        self.batchSize = batchSize
+        
+    def __iter__(self):
+        self.count = self.batchSize
+        self.indexList = random.sample(list(range(self.len)), self.len)
+        while self.count <= self.len:
+            yield(self.indexList[self.count-self.batchSize: self.count])
+            self.count += self.batchSize
+    
+    def __len__(self):
+        return self.len // self.batchSize
+
+        
