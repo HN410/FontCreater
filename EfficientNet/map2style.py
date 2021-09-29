@@ -11,6 +11,7 @@ class Map2Style(nn.Module):
         super(Map2Style, self).__init__()
         assert 0 <= idx < Map2Style.MAX_IDX
         self.__setConvs__(idx, channelN)
+        self.activation = nn.LeakyReLU(negative_slope=0.2)
     
     def __setConvs__(self, idx, inChannel):
         self.convs = []
@@ -31,4 +32,5 @@ class Map2Style(nn.Module):
     def forward(self, input):
         for conv in self.convs:
             input = conv(input)
+            input = self.activation(input)
         return input

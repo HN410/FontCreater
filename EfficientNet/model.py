@@ -224,6 +224,7 @@ class EfficientNetEncoder(nn.Module):
         self._swish = MemoryEfficientSwish()
 
         # エンコード時の1*1conv (チャンネル数変換)
+        self.encode_conv_activation = nn.LeakyReLU(negative_slope=0.2)
         self.encode_convs = []
         self.encode_conv_params = []
         map_channels = EfficientNetEncoder.ENCODE_MAP_CHANNELS
@@ -326,6 +327,7 @@ class EfficientNetEncoder(nn.Module):
         for idx, map in enumerate(used_maps):
             x = F.interpolate(x, scale_factor=2, mode="bilinear")
             x = self.encode_convs[idx](x)
+            x = self.encode_conv_activation(x)
             x += map
             ans.append(self.map2styles[idx+1](x))
         # これで[batchSize, 1024(256*4), 1, 1]が出力される
