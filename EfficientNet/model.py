@@ -350,6 +350,17 @@ class EfficientNetEncoder(nn.Module):
         # Pooling and final linear layer
 
         return x
+    
+    def init_original_layer(self):
+        self.encode_convs.apply(self.init_weights)
+        self.map2styles.apply(self.init_weights)
+
+    @staticmethod
+    def init_weights(m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weights.data)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0.0)
 
     @classmethod
     def from_name(cls, model_name, in_channels=3, **override_params):
