@@ -12,7 +12,8 @@ class FontGeneratorDataset(data.Dataset):
     IMAGE_MEAN = 0.8893
     IMAGE_VAR = 0.0966
 
-    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list, useTensor=True, startInd = 0, indN = None):
+    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list,\
+         useTensor=True, startInd = 0, indN = None, isForValid = None):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
         #  imageN ... ペア画像を出力する数の範囲(要素は２つ)
@@ -20,6 +21,8 @@ class FontGeneratorDataset(data.Dataset):
         #                  [4, 4] ...4個で固定
         #  startInd ... fontListのうち、このインデックス以降のフォントのみを使う
         #  indN ...startIndからindN個のフォントのみを使う。NoneならstartInd以降すべて
+        #  isForValid ... validationなどで、常に固定したデータで出力をしたいときに使う
+        # 　　getInputListForVで取得したディクショナリをここに入れればよい。
         self.fontTools = fontTools
         self.fontList = FontTools.getFontPathList()
         self.compatibleDict = compatibleDict
@@ -35,6 +38,12 @@ class FontGeneratorDataset(data.Dataset):
         self.transform = transforms.Compose([
             transforms.Normalize(self.IMAGE_MEAN, self.IMAGE_VAR)
         ])
+        if(isForValid is not None):
+            self.isForValid = True
+            self.fixedInput = isForValid
+        else:
+            self.isForValid = False
+
     def __len__(self):
         return self.indN
     
@@ -44,17 +53,37 @@ class FontGeneratorDataset(data.Dataset):
         #           idx:1 [1, 256, 256]の変換後画像
         # 教師用データ [imageN-1, 2, 1, 256, 256]のゴシック、変換後フォントの文字の画像のペアのテンソル
         
+
         # まず、入力されたindexを補正
         index += self.startInd
+
+        imageList = []
+
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
-                 self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
-        sampleN = self.sampleN
-        imageList = charaChooser.getSampledImagePair(sampleN, self.transform)
+                self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
+        if(self.isForValid):
+            imageList = charaChooser.getImageFromSampleList(self.fixedInput, self.transform)
+        else:
+            sampleN = self.sampleN
+            imageList = charaChooser.getSampledImagePair(sampleN, self.transform)
 
         convertedPair = imageList[0]
         teachers = torch.stack([torch.stack(i, 0) for i in imageList[1:]], 0)
         
         return [convertedPair, teachers]
+    
+    def getInputListForV(self):
+        # validationように常に固定された入力が出るよう、このデータセットに設定するディクショナリを作る
+        # 形式は、フォントのインデックスをキーとする文字のリストのディクショナリ
+        sampleN = random.randint(self.imageN[0], self.imageN[1])
+        ans = {}
+        for i in range(self.__len__):
+            charaChooser = CharacterChooser(self.fontTools, self.fontList[self.startInd+ i],
+                 self.compatibleDict[self.fontList[self.startInd + i]])
+            ans[i] = charaChooser.sample(sampleN)
+        return ans
+
+
 
     @classmethod
     def getCharaImagesMeanVar(cls, compatibleData, isMinus = False):

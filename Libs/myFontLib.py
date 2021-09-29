@@ -77,7 +77,8 @@ class CharacterChooser:
     IMAGEMODE = "RGB"
 
     # フォントのパスとそのフォントが対応している文字のリストを受け取り、ランダムに扱える文字をサンプリングする
-    def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list, useTensor=False):
+    def __init__(self, fontTools: FontTools,  fontPath: str, compatibleList: list, useTensor=False, 
+        isForValid = False):
         self.fontTools = fontTools
         self.fontPath = fontPath
         self.compatibleList = compatibleList
@@ -95,7 +96,11 @@ class CharacterChooser:
         if(useTensor):
             transformList.append(transforms.ToTensor())
         self.transform = transforms.Compose(transformList)
+        self.isForValid = isForValid
 
+
+
+    @staticmethod
     def __getImage__(fontPath: str, text: str):
         # 指定したフォント、文字の画像を返す
         # まず、INITFONTSIZEで画像を作り、その文字のピクセル数を確認
@@ -138,11 +143,8 @@ class CharacterChooser:
                 beforeN = checkN
         return ans
     
-    def getSampledImagePair(self, sampleN: int, transform = None, useTensor= False):
-        # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
-        # 基準となるフォントのペアの画像として返す
-
-        sampleList = self.sample(sampleN)
+    def getImageFromSampleList(self, sampleList, transform):
+        # sampleList(文字のリスト)から訓練画像を得る
         ans = [[] for i in range(len(sampleList))]
         for i, sampleCharacter in enumerate(sampleList):
             standard = CharacterChooser.__getImage__(FontTools.STANDARDFONT, sampleCharacter)
@@ -154,6 +156,13 @@ class CharacterChooser:
                 target = transform(target)
             ans[i] = [standard, target]
         return ans 
+    
+    def getSampledImagePair(self, sampleN: int, transform = None, useTensor= False):
+        # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
+        # 基準となるフォントのペアの画像として返す
+
+        sampleList = self.sample(sampleN)
+        return self.getImageFromSampleList(sampleList, transform)
 
 
 # 以下、集めたフォントの品質確認（漢字に対応するかなど）をするモジュール
