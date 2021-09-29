@@ -358,7 +358,7 @@ class EfficientNetEncoder(nn.Module):
     @staticmethod
     def init_weights(m):
         if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weights.data)
+            nn.init.kaiming_normal_(m.weight.data)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0.0)
 

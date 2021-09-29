@@ -18,21 +18,22 @@ class MyPSP(nn.Module):
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params)
-        self.chara_encoder._change_in_channels(1)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
+        self.chara_encoder._change_in_channels(1)
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"])
     
-    def forward(self, chara_images,  style_pairs):
+    def forward(self, chara_images,  style_pairs, alpha):
         # chara_image ... 変換したい文字のMSゴシック体の画像
         #   [B, 1, 256, 256]
         # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
         #   [B, pair_n, 2, 1, 256, 256]
+        # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
         batch_n = chara_images.size()[0]
         pair_n = style_pairs.size()[1]
 
@@ -47,7 +48,7 @@ class MyPSP(nn.Module):
         print(chara_images[:, :self.z_dim*2].size())
         print(style_pairs[:, self.z_dim*2:].size())
 
-        self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], self.alpha)
+        self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], alpha)
 
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数

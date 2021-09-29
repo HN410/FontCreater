@@ -321,12 +321,12 @@ class SynthesisModule(nn.Module):
         x2 = self.blocks[level-1](x2, w[:, level*2-2], w[:, level*2-1])
         x2 = self.to_monos[1](x2)
 
-        if alpha == 1:
+        if alpha.item() == 1:
             x = x2
         else:
             x1 = self.to_monos[0](x)
             x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
-            x = torch.lerp(x1, x2, alpha)
+            x = torch.lerp(x1, x2, alpha.item())
 
         return x
 
