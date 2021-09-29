@@ -45,3 +45,30 @@ class MyPSP(nn.Module):
         print(style_pairs[:, self.z_dim*2:].size())
 
         self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], self.alpha)
+
+class MyPSPLoss(nn.Module):
+    # MyPSP用の損失関数
+    # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
+
+    MSE_N = 3
+    SCALE = 4
+
+    def __init__(self):
+        super().__init__()
+        self.MSEs = nn.ModuleList([nn.MSELoss() for i in range(self.MSE_N)])
+    
+    def forward(self, outputs, targets):
+        # outputs, targetsともに[B, 1, W, H]
+        ans = [0] * self.MSE_N
+        ans[0] = self.MSEs[0](outputs, targets)
+        # SCALE分の1した画像でも同様に二乗誤差をとってみる
+        factor = 1
+        for i in range(self.MSE_N-1):
+            factor *= self.SCALE ** 2
+            outputs = F.interpolate(outputs, scale_factor=1/self.SCALE, mode="bilinear")
+            targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
+            ans[i+1] = self.MSEs[i+1](outputs, targets) * factor
+        print(ans)
+        ans = torch.stack(ans)
+        return torch.mean(ans)
+        
