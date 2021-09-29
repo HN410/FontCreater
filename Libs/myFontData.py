@@ -12,30 +12,40 @@ class FontGeneratorDataset(data.Dataset):
     IMAGE_MEAN = 0.8893
     IMAGE_VAR = 0.0966
 
-    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list, useTensor=True):
+    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list, useTensor=True, startInd = 0, indN = None):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
         #  imageN ... ペア画像を出力する数の範囲(要素は２つ)
         #             (例) [3, 6] ... 3~6個の中から一様分布で決定される
         #                  [4, 4] ...4個で固定
+        #  startInd ... fontListのうち、このインデックス以降のフォントのみを使う
+        #  indN ...startIndからindN個のフォントのみを使う。NoneならstartInd以降すべて
         self.fontTools = fontTools
         self.fontList = FontTools.getFontPathList()
         self.compatibleDict = compatibleDict
         self.imageN = imageN
         self.resetSampleN()
         self.useTensor = useTensor
+        self.startInd = startInd
+        if(indN is None):
+            self.indN = len(self.fontList) - startInd
+        else:
+            self.indN = indN
 
         self.transform = transforms.Compose([
             transforms.Normalize(self.IMAGE_MEAN, self.IMAGE_VAR)
         ])
     def __len__(self):
-        return len(self.fontList)
+        return self.indN
     
     def __getitem__(self, index):
         # 形式は変換用の画像の組と教師用データのテンソルのリスト
         # 変換用画像 idx:0 [1, 256, 256]の変換元画像
         #           idx:1 [1, 256, 256]の変換後画像
         # 教師用データ [imageN-1, 2, 1, 256, 256]のゴシック、変換後フォントの文字の画像のペアのテンソル
+        
+        # まず、入力されたindexを補正
+        index += self.startInd
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                  self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
         sampleN = self.sampleN
