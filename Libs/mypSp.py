@@ -10,7 +10,7 @@ from StyleGAN.network import *
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
-    def __init__(self, device):
+    def __init__(self):
         # chara_encoder ... どの文字かをエンコード
         # style_encoder ... 複数のフォントの組からスタイル情報をエンコード
         # style_gen ... エンコーダから得られた情報をもとにフォントを構成
@@ -27,7 +27,6 @@ class MyPSP(nn.Module):
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"])
-        self.alpha = torch.ones((1)).to(device)
     
     def forward(self, chara_images,  style_pairs):
         # chara_image ... 変換したい文字のMSゴシック体の画像
