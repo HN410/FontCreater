@@ -20,7 +20,7 @@ class FontTools():
     def __getJISList__():
         ans = []
         for path in FontTools.JISCHINESECHARAS:
-            path = os.path.dirname(__file__) + "\\" + path
+            path = os.path.join(os.path.dirname(__file__), path)
             data = ""
             with open(path, "r", encoding='UTF-8') as f:
                 data = f.read()
