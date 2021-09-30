@@ -472,21 +472,15 @@ class Discriminator(nn.Module):
         use_blur = settings["use_blur"]
         self.downsample_mode = settings["upsample_mode"]
 
-        self.from_rgbs = nn.ModuleList([
-            WSConv2d(3, 16, 1, 1, 0),
-            WSConv2d(3, 32, 1, 1, 0),
-            WSConv2d(3, 64, 1, 1, 0),
-            WSConv2d(3, 128, 1, 1, 0),
-            WSConv2d(3, 256, 1, 1, 0),
-            WSConv2d(3, 256, 1, 1, 0),
-            WSConv2d(3, 256, 1, 1, 0)
+        self.from_monos = nn.ModuleList([
+            WSConv2d(1, 16, 1, 1, 0),
+            WSConv2d(1, 32, 1, 1, 0),
+            WSConv2d(1, 64, 1, 1, 0),
+            WSConv2d(1, 128, 1, 1, 0),
+            WSConv2d(1, 256, 1, 1, 0),
+            WSConv2d(1, 256, 1, 1, 0),
+            WSConv2d(1, 256, 1, 1, 0)
         ])
-
-        self.use_labels = settings["use_labels"]
-        if self.use_labels:
-            self.label_size = label_size
-        else:
-            self.label_size = 1
 
         self.blocks = nn.ModuleList([
             DBlock(16, 32, use_blur),
@@ -505,15 +499,15 @@ class Discriminator(nn.Module):
     def set_level(self, level):
         self.level.fill_(level)
 
-    def forward(self, x, labels, alpha):
+    def forward(self, x, alpha):
         level = self.level.item()
 
         if level == 1:
-            x = self.from_rgbs[-1](x)
+            x = self.from_monos[-1](x)
             x = self.activation(x)
             x = self.blocks[-1](x)
         else:
-            x2 = self.from_rgbs[-level](x)
+            x2 = self.from_monos[-level](x)
             x2 = self.activation(x2)
             x2 = self.blocks[-level](x2)
 
@@ -521,7 +515,7 @@ class Discriminator(nn.Module):
                 x = x2
             else:
                 x1 = F.interpolate(x, scale_factor=0.5, mode=self.downsample_mode)
-                x1 = self.from_rgbs[-level+1](x1)
+                x1 = self.from_monos[-level+1](x1)
                 x1 = self.activation(x1)
 
                 x = torch.lerp(x1, x2, alpha)
@@ -529,11 +523,7 @@ class Discriminator(nn.Module):
             for l in range(1, level):
                 x = self.blocks[-level+l](x)
 
-        if self.use_labels:
-            x = x.view([-1, self.label_size])
-            return torch.gather(x, 1, labels.view(-1, 1))
-        else:
-            return x.view([-1, 1])
+        return x.view([-1, 1])
 
 def get_setting_json():
     dirname = os.path.dirname(__file__)
