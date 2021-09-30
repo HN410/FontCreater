@@ -110,4 +110,4 @@ class ImageSharpLoss(nn.Module):
         bigger = torch.ge(outputs, 0.5)
         smaller = smaller * outputs**2
         bigger = bigger * (outputs-1)**2
-        return smaller + bigger
+        return (smaller + bigger).mean()
