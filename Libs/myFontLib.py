@@ -6,6 +6,7 @@ from ipywidgets import interact
 import ipywidgets as widgets
 from IPython.display import display
 import random
+import unicodedata
 import torchvision.transforms as transforms
 
 
@@ -45,7 +46,9 @@ class FontTools():
         for d in dirs:
             for parent, _, filenames in os.walk(d):
                 for name in filenames:
-                    l.append(os.path.join(parent, name))
+                    fontPath = os.path.join(parent, name)
+                    fontPath = unicodedata.normalize('NFKC', fontPath)
+                    l.append(fontPath)
         return l
 
     @classmethod
