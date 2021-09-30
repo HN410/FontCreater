@@ -62,7 +62,7 @@ class FontGeneratorDataset(data.Dataset):
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                 self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
         if(self.isForValid):
-            imageList = charaChooser.getImageFromSampleList(self.fixedInput, self.transform)
+            imageList = charaChooser.getImageFromSampleList(self.fixedInput[index], self.transform)
         else:
             sampleN = self.sampleN
             imageList = charaChooser.getSampledImagePair(sampleN, self.transform)
@@ -77,12 +77,26 @@ class FontGeneratorDataset(data.Dataset):
         # 形式は、フォントのインデックスをキーとする文字のリストのディクショナリ
         sampleN = random.randint(self.imageN[0], self.imageN[1])
         ans = {}
-        for i in range(self.__len__):
+        for i in range(self.__len__()):
             charaChooser = CharacterChooser(self.fontTools, self.fontList[self.startInd+ i],
                  self.compatibleDict[self.fontList[self.startInd + i]])
             ans[i] = charaChooser.sample(sampleN)
         return ans
 
+    def getJapaneseFontIndices(self):
+        # 日本語の文字を含むフォントに対応するインデックスのリストを返す
+        index = self.startInd
+        ans = []
+        for i in range(self.indN):
+            font = self.fontList[index]
+            compatibleList = self.compatibleDict[font]
+            for j in range(2, 5):
+                if compatibleList[j]:
+                    ans.append(i)
+                    break
+            index+=1
+            i+=1
+        return ans 
 
 
     @classmethod
@@ -103,17 +117,26 @@ class FontGeneratorDataset(data.Dataset):
 
 class MyPSPBatchSampler(torch.utils.data.sampler.BatchSampler):
     # MyPSP用のBatchSampler
-    def __init__(self, batchSize, fontGeneratorDataset: FontGeneratorDataset):
+    def __init__(self, batchSize, fontGeneratorDataset: FontGeneratorDataset, japaneseRate = 0):
         self.fontGeneratorDataset = fontGeneratorDataset
         self.len = len(fontGeneratorDataset)
         self.batchSize = batchSize
+        if( 0 < japaneseRate <= 1):
+            self.japaneseRate = japaneseRate
+        else:
+            self.japaneseRate = 0
         
     def __iter__(self):
         self.count = self.batchSize
-        self.indexList = random.sample(list(range(self.len)), self.len)
+        self.indicesList = random.sample(list(range(self.len)), self.len)
+        if(self.japaneseRate > 0):
+            self.japaneseIndicesList = random.choices(self.fontGeneratorDataset.getJapaneseFontIndices(), k=self.len)
         while self.count <= self.len:
             self.fontGeneratorDataset.resetSampleN()
-            yield(self.indexList[self.count-self.batchSize: self.count])
+            if(random.random() < self.japaneseRate):
+                yield(self.japaneseIndicesList[self.count-self.batchSize: self.count])
+            else:
+                yield(self.indicesList[self.count-self.batchSize: self.count])
             self.count += self.batchSize
     
     def __len__(self):
