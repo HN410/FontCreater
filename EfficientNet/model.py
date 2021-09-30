@@ -165,7 +165,9 @@ class EfficientNetEncoder(nn.Module):
     SAVED_FEATUREMAPS_IDX = [2, 4, 10] # encode時に用いる特徴マップのインデックス
     ENCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
 
-    def __init__(self, blocks_args=None, global_params=None):
+    def __init__(self, blocks_args=None, global_params=None, isForCharacter = False):
+        # isForCharacter ... 文字エンコード用ならTrue, スタイルエンコード用ならFalse
+
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
@@ -223,20 +225,37 @@ class EfficientNetEncoder(nn.Module):
         # set activation to memory efficient swish by default
         self._swish = MemoryEfficientSwish()
 
+        self.isForCharacter = isForCharacter
+        # 後でアップサンプルしたものと加算する特徴量マップ
+        if(isForCharacter):
+            self.saved_features = [self.SAVED_FEATUREMAPS_IDX[-1]]
+        else:
+            self.saved_features = self.SAVED_FEATUREMAPS_IDX
+
         # エンコード時の1*1conv (チャンネル数変換)
         self.encode_conv_activation = nn.LeakyReLU(negative_slope=0.2)
         self.encode_convs = []
         self.encode_conv_params = []
         map_channels = EfficientNetEncoder.ENCODE_MAP_CHANNELS
-        for i in range(len(map_channels)-1):
+        encode_conv_n = len(map_channels)-1
+        map2style_n = 2
+        self.used_maps_indices = EfficientNetEncoder.SAVED_FEATUREMAPS_IDX
+        if isForCharacter:
+            encode_conv_n = 1
+            self.used_maps_indices = [self.used_maps_indices[-1]]
+        for i in range(encode_conv_n):
             conv = nn.Conv2d(in_channels=map_channels[i], out_channels=map_channels[i+1], kernel_size=1)
             self.encode_convs.append(conv)
             self.encode_conv_params.append(conv.parameters())
         self.encode_convs = nn.ModuleList(self.encode_convs)
 
         # Map2Style
+        indPlus = 0
+        if(not isForCharacter):
+            indPlus = 2
         self.map2styles = nn.ModuleList(
-            [Map2Style(i, channelN) for i, channelN in enumerate(EfficientNetEncoder.ENCODE_MAP_CHANNELS)])
+            [Map2Style(i+indPlus, map_channels[i+indPlus]) for i in range(map2style_n)])
+
 
 
     def set_swish(self, memory_efficient=True):
@@ -318,20 +337,26 @@ class EfficientNetEncoder(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            if(idx in EfficientNetEncoder.SAVED_FEATUREMAPS_IDX):
+            if(idx in self.used_maps_indices):
                 used_maps.append(x) # 場合によってはclone()すべき？
 
         # Upsample
-        ans.append(self.map2styles[0](x))
+        if(self.isForCharacter):
+            ans.append(self.map2styles[0](x))
         used_maps.reverse()
         for idx, map in enumerate(used_maps):
             x = F.interpolate(x, scale_factor=2, mode="bilinear")
             x = self.encode_convs[idx](x)
             x = self.encode_conv_activation(x)
             x += map
-            ans.append(self.map2styles[idx+1](x))
-        # これで[batchSize, 1024(256*4), 1, 1]が出力される
+            if(self.isForCharacter):
+                ans.append(self.map2styles[idx+1](x))
+            elif(idx != 0):
+                ans.append(self.map2styles[idx-1](x))
+        # これで[batchSize, 256*2, 1, 1]が出力される
+        # (isForCharacter)[batchSize, 256*6, 1, 1]
         ans = torch.cat(ans, 1)
+
 
         return ans
 

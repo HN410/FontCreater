@@ -363,10 +363,10 @@ class Generator(nn.Module):
         if self.latent_normalization is not None:
             chara_z = self.latent_normalization(chara_z)
             style_z = self.latent_normalization(style_z)
-        # zは[Batch, z_dim * 4, 1, 1]
-        z = self.expand_to_w(style_z, chara_z)
-
-        # z becomes [B, level*2, z_dim, 1, 1]
+        # chara_z[Batch, z_dim * 6, 1, 1]
+        # style_z[Batch, z_dim * 2, 1, 1]
+        z = self.expand_to_w(chara_z, style_z)
+        # z becomes
         # → [B, 7*2, 256, 1, 1]
 
 
@@ -401,15 +401,16 @@ class Generator(nn.Module):
         writer.add_histogram("w_average", self.w_average.cpu().data.numpy(), step)
 
     def expand_to_w(self, chara_z, style_z):
-        # zは[Batch, z_dim * 4, 1, 1]
-        # これを拡大
+        # zは[Batch, z_dim * (6+2), 1, 1]
+        # これをstyle_zのみ拡大
         batch_size = chara_z.size()[0]
-        zs = [chara_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] + \
-            [style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
-        z1 = zs[0].view(batch_size, 1, -1, 1, 1)\
-            .expand(batch_size, 2, self.z_dim, 1, 1)
-        z24 = [zs[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(1, self.z_kind*2)]
-        return torch.cat((z1, z24[0], z24[1], z24[2]), 1)
+        chara_z = [chara_z[:,self.z_dim * i : self.z_dim*(i+1) ] for i in range(chara_z.size()[1]//self.z_dim)]
+        chara_z = [e.view(batch_size, 1, -1, 1, 1) for e in chara_z]
+        chara_z = torch.cat(chara_z, 1)
+        style_z =[style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
+        z23 = [style_z[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(self.z_kind)]
+
+        return torch.cat((chara_z, z23[0], z23[1]), 1)
         
 
 

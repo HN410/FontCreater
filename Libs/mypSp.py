@@ -20,7 +20,7 @@ class MyPSP(nn.Module):
         super().__init__()
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
-        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params)
+        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
@@ -37,20 +37,20 @@ class MyPSP(nn.Module):
         # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
         #   [B, pair_n, 2, 1, 256, 256]
         # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
-        batch_n = chara_images.size()[0]
         pair_n = style_pairs.size()[1]
 
+        # 文字をエンコード [B, 256*6, 1, 1]
         chara_images = self.chara_encoder(chara_images)
         
         # ペアの差分をとる [B, pair_n, 1, 256, 256]
         style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
-        # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*4, 1, 1]
+        # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
         style_pairs = [self.style_encoder(style_pairs[:, i]) for i in range(pair_n)]
 
         style_pairs = torch.stack(style_pairs).sum(0)
 
 
-        res =  self.style_gen(chara_images[:, :self.z_dim*2], style_pairs[:, self.z_dim*2:], alpha)
+        res =  self.style_gen(chara_images, style_pairs, alpha)
         return torch.sigmoid(res)
 
 class MyPSPLoss(nn.Module):
@@ -73,7 +73,7 @@ class MyPSPLoss(nn.Module):
         # outputs, targetsともに[B, 1, W, H]
 
         # onSharp == Trueで各ピクセルが0か1に近いほど小さくなるような損失も追加
-        sharpScore = torch.zeros((1))
+        sharpScore = 0
         if(self.sharpLoss is not None):
             sharpScore = self.sharpLoss(outputs)
             sharpScore *= self.onSharp
