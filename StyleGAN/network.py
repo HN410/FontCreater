@@ -288,11 +288,21 @@ class SynthesisModule(nn.Module):
         #     WSConv2d(16, 3, 1, 1, 0, gain=1)
         # ])
         self.to_monos = nn.ModuleList([
+            WSConv2d(256, 1, 1, 1, 0, gain=1),
+            WSConv2d(256, 1, 1, 1, 0, gain=1),
+            WSConv2d(256, 1, 1, 1, 0, gain=1),
+            WSConv2d(128, 1, 1, 1, 0, gain=1),
+            WSConv2d(64, 1, 1, 1, 0, gain=1),
             WSConv2d(32, 1, 1, 1, 0, gain=1),
-            WSConv2d(16, 1, 1, 1, 0, gain=1)])
+            WSConv2d(16, 1, 1, 1, 0, gain=1)
+        ])
+
         self.level = 7
 
         # self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
+    def set_level(self, level: int):
+        assert 0 < level <= 7
+        self.level = level
 
     def set_noise_fixed(self, fixed):
         for module in self.modules():
@@ -315,12 +325,12 @@ class SynthesisModule(nn.Module):
 
         x2 = x
         x2 = self.blocks[level-1](x2, w[:, level*2-2], w[:, level*2-1])
-        x2 = self.to_monos[1](x2)
+        x2 = self.to_monos[level-1](x2)
 
         if alpha.item() == 1:
             x = x2
         else:
-            x1 = self.to_monos[0](x)
+            x1 = self.to_monos[level-2](x)
             x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
             x = torch.lerp(x1, x2, alpha.item())
 
