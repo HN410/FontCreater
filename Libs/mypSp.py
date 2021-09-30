@@ -56,16 +56,28 @@ class MyPSP(nn.Module):
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
+    # onSharpはImageSharpLossにかける係数
 
     MSE_N = 3
     SCALE = 4
 
-    def __init__(self):
+    def __init__(self, onSharp = 0):
         super().__init__()
         self.MSEs = nn.ModuleList([nn.MSELoss() for i in range(self.MSE_N)])
-    
+        if(0 < onSharp):
+            self.onSharp = onSharp
+            self.sharpLoss = ImageSharpLoss()
+        else:
+            self.sharpLoss = None
     def forward(self, outputs, targets):
         # outputs, targetsともに[B, 1, W, H]
+
+        # onSharp == Trueで各ピクセルが0か1に近いほど小さくなるような損失も追加
+        sharpScore = torch.zeros((1))
+        if(self.sharpLoss is not None):
+            sharpScore = self.sharpLoss(outputs)
+            sharpScore *= self.onSharp
+            
 
         # outputsは正規化されていないので、正規化する
         outputs = transforms.Compose([
@@ -82,5 +94,20 @@ class MyPSPLoss(nn.Module):
             targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
             ans[i+1] = self.MSEs[i+1](outputs, targets) * factor
         ans = torch.stack(ans)
-        return torch.mean(ans)
-        
+        return torch.mean(ans) + sharpScore
+
+class ImageSharpLoss(nn.Module):
+    # 各ピクセルが0, 1に近いほど損失が小さくなる
+    #　基本的にはx^2と(x-1)^2を場合分けで組み合わせた形
+
+    #  正規化する前に入力すること
+
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, outputs):
+        smaller = torch.lt(outputs, 0.5)
+        bigger = torch.ge(outputs, 0.5)
+        smaller = smaller * outputs**2
+        bigger = bigger * (outputs-1)**2
+        return smaller + bigger
