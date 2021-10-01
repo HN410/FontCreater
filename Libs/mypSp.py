@@ -31,6 +31,9 @@ class MyPSP(nn.Module):
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"])
     
+    def set_level(self, level):
+        self.style_gen.set_level(level)
+    
     def forward(self, chara_images,  style_pairs, alpha):
         # chara_image ... 変換したい文字のMSゴシック体の画像
         #   [B, 1, 256, 256]

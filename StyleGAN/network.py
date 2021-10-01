@@ -316,9 +316,10 @@ class SynthesisModule(nn.Module):
 
         x = self.blocks[0](w[:, 0], w[:, 1])
 
-        # if level == 1:
-        #     x = self.to_rgbs[0](x)
-        #     return x
+        if level == 1:
+            x = self.to_monos[0](x)
+            x = F.interpolate(x, scale_factor=2**(7-level), mode = "bilinear")
+            return x
 
         for i in range(1, level-1):
             x = self.blocks[i](x, w[:, i*2], w[:, i*2+1])
@@ -333,7 +334,9 @@ class SynthesisModule(nn.Module):
             x1 = self.to_monos[level-2](x)
             x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
             x = torch.lerp(x1, x2, alpha.item())
-
+        
+        if level < 7:
+            x = F.interpolate(x, scale_factor=2**(7-level), mode = "bilinear")
         return x
 
     def write_histogram(self, writer, step):
@@ -363,8 +366,8 @@ class Generator(nn.Module):
         self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
  
 
-    # def set_level(self, level):
-    #     self.synthesis_module.level.fill_(level)
+    def set_level(self, level):
+        self.synthesis_module.set_level(level)
 
     def forward(self, chara_z, style_z, alpha):
         batch_size = chara_z.size()[0]
