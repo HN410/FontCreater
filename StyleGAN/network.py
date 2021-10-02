@@ -16,6 +16,8 @@ class PixelNormalizationLayer(nn.Module):
 
     def forward(self, x):
         # x is [B, C, H, W]
+        if x is None:
+            return x
         x2 = x ** 2
 
         length_inv = torch.rsqrt(x2.mean(1, keepdim=True) + self.epsilon)
@@ -297,17 +299,35 @@ class SynthesisModule(nn.Module):
             WSConv2d(16, 1, 1, 1, 0, gain=1)
         ])
 
+        self.chara_training_convs = nn.ModuleList([
+            nn.Conv2d(256, 128, 3, 1, 1), 
+            nn.Conv2d(128, 1, 3, 1, 1)
+        ])
+
         self.level = 7
+        self.for_chara_training = False
 
         # self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
     def set_level(self, level: int):
         assert 0 < level <= 7
         self.level = level
+    def set_for_chara_training(self, b):
+        self.for_chara_training = b
+        if b:
+            self.level = min(self.level, 3)
 
     def set_noise_fixed(self, fixed):
         for module in self.modules():
             if isinstance(module, NoiseLayer):
                 module.fixed = fixed
+    
+    def chara_training_layer(self, x):
+        for i in range(2):
+            x = F.interpolate(x, scale_factor=2, mode="bilinear")
+            x = self.chara_training_convs[i](x)
+            x = nn.LeakyReLU(negative_slope=0.2)(x)
+        x = F.interpolate(x, size=(256, 256), mode = "bicubic")
+        return x
 
     def forward(self, w, alpha):
         # w is [batch_size. level*2, w_dim, 1, 1]
@@ -326,6 +346,10 @@ class SynthesisModule(nn.Module):
 
         x2 = x
         x2 = self.blocks[level-1](x2, w[:, level*2-2], w[:, level*2-1])
+        if self.for_chara_training and self.level == 3:
+            return self.chara_training_layer(x2)
+
+
         x2 = self.to_monos[level-1](x2)
 
         if alpha.item() == 1:
@@ -350,7 +374,7 @@ class SynthesisModule(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, settings):
+    def __init__(self, settings, for_chara_training = False):
         super().__init__()
 
         self.synthesis_module = SynthesisModule(settings)
@@ -364,10 +388,15 @@ class Generator(nn.Module):
         self.trunc_w_layers = 8
         self.trunc_w_psi = 0.8
         self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
+        self.for_chara_training = for_chara_training # 文字のエンコードデコードのみを訓練
  
 
     def set_level(self, level):
         self.synthesis_module.set_level(level)
+
+    def set_for_chara_training(self, b):
+        self.for_chara_training = b
+        self.synthesis_module.set_for_chara_training(b)
 
     def forward(self, chara_z, style_z, alpha):
         batch_size = chara_z.size()[0]
@@ -420,6 +449,9 @@ class Generator(nn.Module):
         chara_z = [chara_z[:,self.z_dim * i : self.z_dim*(i+1) ] for i in range(chara_z.size()[1]//self.z_dim)]
         chara_z = [e.view(batch_size, 1, -1, 1, 1) for e in chara_z]
         chara_z = torch.cat(chara_z, 1)
+        if style_z is None:
+            return chara_z
+
         style_z =[style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
         z23 = [style_z[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(self.z_kind)]
 

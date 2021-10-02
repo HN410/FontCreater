@@ -30,9 +30,15 @@ class MyPSP(nn.Module):
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"])
+        self.for_chara_training = False
     
     def set_level(self, level):
         self.style_gen.set_level(level)
+    
+    def set_for_chara_training(self, b):
+        # 文字のエンコードデコードのみを訓練するとき
+        self.style_gen.set_for_chara_training(b)
+        self.for_chara_training = b
     
     def forward(self, chara_images,  style_pairs, alpha):
         # chara_image ... 変換したい文字のMSゴシック体の画像
@@ -40,11 +46,14 @@ class MyPSP(nn.Module):
         # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
         #   [B, pair_n, 2, 1, 256, 256]
         # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
-        pair_n = style_pairs.size()[1]
 
         # 文字をエンコード [B, 256*6, 1, 1]
         chara_images = self.chara_encoder(chara_images)
+
+        if self.for_chara_training:
+            return torch.sigmoid(self.style_gen(chara_images, None, alpha))
         
+        pair_n = style_pairs.size()[1]
         # ペアの差分をとる [B, pair_n, 1, 256, 256]
         style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
