@@ -13,14 +13,14 @@ from StyleGAN.network import *
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
-    def __init__(self):
+    def __init__(self, ver = 1):
         # chara_encoder ... どの文字かをエンコード
         # style_encoder ... 複数のフォントの組からスタイル情報をエンコード
         # style_gen ... エンコーダから得られた情報をもとにフォントを構成
         super().__init__()
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
-        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True)
+        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
@@ -29,8 +29,9 @@ class MyPSP(nn.Module):
         self.chara_encoder._change_in_channels(1)
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
-        self.style_gen = Generator(gen_settings["network"])
+        self.style_gen = Generator(gen_settings["network"], ver=ver)
         self.for_chara_training = False
+        self.ver = ver
     
     def set_level(self, level):
         self.style_gen.set_level(level)
@@ -47,7 +48,7 @@ class MyPSP(nn.Module):
         #   [B, pair_n, 2, 1, 256, 256]
         # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
 
-        # 文字をエンコード [B, 256*6, 1, 1]
+        # 文字をエンコード [B, 256*6, 1, 1](ver1) or [B, 320, 8, 8](ver2)
         chara_images = self.chara_encoder(chara_images)
 
         if self.for_chara_training:
