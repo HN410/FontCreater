@@ -23,7 +23,7 @@ class MyPSP(nn.Module):
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
-                                load_fc=(True), advprop=False)
+                                load_fc=(ver == 1), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
         self.chara_encoder._change_in_channels(1)

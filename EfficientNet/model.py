@@ -345,7 +345,7 @@ class EfficientNetEncoder(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            if(idx in self.used_maps_indices) and self.ver != 2:
+            if self.ver != 2 and (idx in self.used_maps_indices):
                 used_maps.append(x) # 場合によってはclone()すべき？
         if self.ver == 2:
             # [B, 320, 8, 8]
@@ -387,8 +387,9 @@ class EfficientNetEncoder(nn.Module):
         return x
     
     def init_original_layer(self):
-        self.encode_convs.apply(self.init_weights)
-        self.map2styles.apply(self.init_weights)
+        if self.ver == 1:
+            self.encode_convs.apply(self.init_weights)
+            self.map2styles.apply(self.init_weights)
 
     @staticmethod
     def init_weights(m):
