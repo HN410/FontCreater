@@ -1,5 +1,6 @@
 import random
 import torch
+from torchvision.transforms.transforms import Grayscale
 from .myFontLib import *
 import torch.utils.data as data
 class FontGeneratorDataset(data.Dataset):
@@ -113,7 +114,32 @@ class FontGeneratorDataset(data.Dataset):
     
     def resetSampleN(self):
         self.sampleN = random.randint(self.imageN[0], self.imageN[1])
-    
+
+
+class MyPSPCharaDataset(data.Dataset):
+    # 文字のエンコード訓練用
+    def __init__(self, charaList):
+        # charaList ... 画像を作りたい文字のリスト
+        self.charaList = charaList
+        self.transform = transforms.Compose([ 
+            transforms.Grayscale(), 
+            transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN,
+                                     FontGeneratorDataset.IMAGE_VAR)
+        ])
+
+    def __len__(self):
+        return len(self.charaList)
+
+
+    def __getitem__(self, index):
+        # 変換した画像が帰ってくる
+
+        # まず、入力されたindexを補正
+        image = self.transform(CharacterChooser.__getImage__(FontTools.STANDARDFONT, 
+                                                            self.charaList[index]))
+        # FontGeneratorDatasetとあうようにリストに入れる
+        return [image]
+
 
 class MyPSPBatchSampler(torch.utils.data.sampler.BatchSampler):
     # MyPSP用のBatchSampler
