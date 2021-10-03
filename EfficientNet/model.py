@@ -165,8 +165,10 @@ class EfficientNetEncoder(nn.Module):
     SAVED_FEATUREMAPS_IDX = [2, 4, 10] # encode時に用いる特徴マップのインデックス
     ENCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
 
-    def __init__(self, blocks_args=None, global_params=None, isForCharacter = False):
+    def __init__(self, blocks_args=None, global_params=None, isForCharacter = False, ver=1):
         # isForCharacter ... 文字エンコード用ならTrue, スタイルエンコード用ならFalse
+        # ver ... version指定。1は文字のエンコード情報もadaInの入力。2はefficientNetの特徴量マップをそのままStyleGenの特徴量マップとして使う
+        # ※ver2は文字エンコードにのみ使う
 
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
@@ -226,6 +228,12 @@ class EfficientNetEncoder(nn.Module):
         self._swish = MemoryEfficientSwish()
 
         self.isForCharacter = isForCharacter
+        self.ver = ver
+
+        # ver 2ではmap2Styleは使わない
+        if self.ver == 2:
+            return
+
         # 後でアップサンプルしたものと加算する特徴量マップ
         if(isForCharacter):
             self.saved_features = [self.SAVED_FEATUREMAPS_IDX[-1]]
@@ -337,9 +345,11 @@ class EfficientNetEncoder(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            if(idx in self.used_maps_indices):
+            if(idx in self.used_maps_indices) and self.ver != 2:
                 used_maps.append(x) # 場合によってはclone()すべき？
-
+        if self.ver == 2:
+            # [B, 320, 8, 8]
+            return x
         # Upsample
         if(self.isForCharacter):
             ans.append(self.map2styles[0](x))
