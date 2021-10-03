@@ -261,7 +261,7 @@ class SynthBlock(nn.Module):
 
 
 class SynthesisModule(nn.Module):
-    def __init__(self, settings):
+    def __init__(self, settings, make_blocks = True):
         super().__init__()
 
         self.w_dim = settings["w_dim"]
@@ -270,15 +270,26 @@ class SynthesisModule(nn.Module):
         use_noise = settings["use_noise"]
         base_image_init = settings["base_image_init"]
 
-        self.blocks = nn.ModuleList([
-            SynthFirstBlock(256, 256, self.w_dim, base_image_init, use_noise),
-            SynthBlock(256, 256, 8, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(256, 256, 16, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
-        ])
+        if make_blocks:
+            self.blocks = nn.ModuleList([
+                SynthFirstBlock(256, 256, self.w_dim, base_image_init, use_noise),
+                SynthBlock(256, 256, 8, self.w_dim, self.upsample_mode, use_blur, use_noise),
+                SynthBlock(256, 256, 16, self.w_dim, self.upsample_mode, use_blur, use_noise),
+                SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise),
+                SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise),
+                SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise),
+                SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
+            ])
+            self.to_monos = nn.ModuleList([
+                WSConv2d(256, 1, 1, 1, 0, gain=1),
+                WSConv2d(256, 1, 1, 1, 0, gain=1),
+                WSConv2d(256, 1, 1, 1, 0, gain=1),
+                WSConv2d(128, 1, 1, 1, 0, gain=1),
+                WSConv2d(64, 1, 1, 1, 0, gain=1),
+                WSConv2d(32, 1, 1, 1, 0, gain=1),
+                WSConv2d(16, 1, 1, 1, 0, gain=1)
+            ])
+        
 
         # self.to_rgbs = nn.ModuleList([
         #     WSConv2d(256, 3, 1, 1, 0, gain=1),
@@ -289,15 +300,7 @@ class SynthesisModule(nn.Module):
         #     WSConv2d(32, 3, 1, 1, 0, gain=1),
         #     WSConv2d(16, 3, 1, 1, 0, gain=1)
         # ])
-        self.to_monos = nn.ModuleList([
-            WSConv2d(256, 1, 1, 1, 0, gain=1),
-            WSConv2d(256, 1, 1, 1, 0, gain=1),
-            WSConv2d(256, 1, 1, 1, 0, gain=1),
-            WSConv2d(128, 1, 1, 1, 0, gain=1),
-            WSConv2d(64, 1, 1, 1, 0, gain=1),
-            WSConv2d(32, 1, 1, 1, 0, gain=1),
-            WSConv2d(16, 1, 1, 1, 0, gain=1)
-        ])
+
 
         self.chara_training_convs = nn.ModuleList([
             nn.Conv2d(256, 128, 3, 1, 1), 
@@ -372,12 +375,82 @@ class SynthesisModule(nn.Module):
         for name, param in self.to_rgbs.named_parameters():
             writer.add_histogram(f"g_synth_block.torgb/{name}", param.cpu().data.numpy(), step)
 
+class SynthesisModule2(SynthesisModule):
+    # myPSP ver2用のsyntethis. forwardの入力が特徴量マップとwになる
+    def __init__(self, settings):
+        super().__init__(settings, make_blocks=False)
+        use_blur = settings["use_blur"]
+        use_noise = settings["use_noise"]
+        self.first_conv = WSConv2d(320, 256, 3, 1, 1, gain=1)
+        self.blocks = nn.ModuleList([
+            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise),
+            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise),
+            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise),
+            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
+        ])
+        self.to_monos = nn.ModuleList([
+            WSConv2d(320, 1, 1, 1, 0, gain=1),
+            WSConv2d(256, 1, 1, 1, 0, gain=1),
+            WSConv2d(128, 1, 1, 1, 0, gain=1),
+            WSConv2d(64, 1, 1, 1, 0, gain=1),
+            WSConv2d(32, 1, 1, 1, 0, gain=1),
+            WSConv2d(16, 1, 1, 1, 0, gain=1)
+        ])
+
+    def set_level(self, level: int):
+        assert 0 < level <= 6
+        self.level = level
+    def set_for_chara_training(self, b):
+        self.for_chara_training = b
+        if b:
+            self.level = min(self.level, 2)
+
+    def forward(self, chara_z, w, alpha):
+        # w is [batch_size. 8, w_dim, 1, 1]
+        # chara_z is [batch_size, 320, 8, 8]
+        level = self.level
+
+        x = chara_z
+
+        if level == 1:
+            x = self.to_monos[0](x)
+            x = F.interpolate(x, size=(256, 256), mode = "bilinear")
+            return x
+        
+        x = F.interpolate(320, scale_factor=2, mode="bilinear")
+        x = self.first_conv(x)
+
+
+        for i in range(0, level-3):
+            x = self.blocks[i](x, w[:, i*2], w[:, i*2+1])
+        x2 = x
+        x2= self.blocks[level-2](x2, w[:, i*2], w[:, i*2+1])
+
+        if self.for_chara_training and self.level == 3:
+            return self.chara_training_layer(x2)
+
+
+        x2 = self.to_monos[level-1](x2)
+
+        if alpha.item() == 1:
+            x = x2
+        else:
+            x1 = self.to_monos[level-2](x)
+            x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
+            x = torch.lerp(x1, x2, alpha.item())
+        
+        if level < 6:
+            x = F.interpolate(x, size = (256, 256), mode = "bilinear")
+        return x
+
 
 class Generator(nn.Module):
-    def __init__(self, settings, for_chara_training = False):
+    def __init__(self, settings, for_chara_training = False, ver = 1):
         super().__init__()
-
-        self.synthesis_module = SynthesisModule(settings)
+        if ver == 1:
+            self.synthesis_module = SynthesisModule(settings)
+        elif ver == 2:
+            self.synthesis_module = SynthesisModule2(settings)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
         # Truncation trick
@@ -389,6 +462,7 @@ class Generator(nn.Module):
         self.trunc_w_psi = 0.8
         self.latent_normalization = PixelNormalizationLayer(settings) if settings["normalize_latents"] else None
         self.for_chara_training = for_chara_training # 文字のエンコードデコードのみを訓練
+        self.ver = ver
  
 
     def set_level(self, level):
@@ -403,7 +477,8 @@ class Generator(nn.Module):
         level = self.synthesis_module.level
 
         if self.latent_normalization is not None:
-            chara_z = self.latent_normalization(chara_z)
+            if(self.ver == 1):
+                chara_z = self.latent_normalization(chara_z)
             style_z = self.latent_normalization(style_z)
         # chara_z[Batch, z_dim * 6, 1, 1]
         # style_z[Batch, z_dim * 2, 1, 1]
@@ -431,8 +506,12 @@ class Generator(nn.Module):
         #     w[:, self.trunc_w_layers:] = torch.lerp(self.w_average.clone(),
         #                                             w[:, self.trunc_w_layers:].clone(),
         #                                             self.trunc_w_psi).clone()
-
-        fakes = self.synthesis_module(z, alpha)
+        fakes = None
+        if self.ver == 1:
+            fakes = self.synthesis_module(z, alpha)
+        elif self.ver == 2:
+            fakes = self.synthesis_module(chara_z, z, alpha)
+            
 
         return fakes
 
@@ -446,17 +525,19 @@ class Generator(nn.Module):
         # zは[Batch, z_dim * (6+2), 1, 1]
         # これをstyle_zのみ拡大
         batch_size = chara_z.size()[0]
-        chara_z = [chara_z[:,self.z_dim * i : self.z_dim*(i+1) ] for i in range(chara_z.size()[1]//self.z_dim)]
-        chara_z = [e.view(batch_size, 1, -1, 1, 1) for e in chara_z]
-        chara_z = torch.cat(chara_z, 1)
+        if self.ver != 2:
+            chara_z = [chara_z[:,self.z_dim * i : self.z_dim*(i+1) ] for i in range(chara_z.size()[1]//self.z_dim)]
+            chara_z = [e.view(batch_size, 1, -1, 1, 1) for e in chara_z]
+            chara_z = torch.cat(chara_z, 1)
         if style_z is None:
             return chara_z
-
         style_z =[style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
         z23 = [style_z[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(self.z_kind)]
 
+        if(self.ver == 2):
+            return torch.cat(z23, 1)
+
         return torch.cat((chara_z, z23[0], z23[1]), 1)
-        
 
 
 class DBlock(nn.Module):
