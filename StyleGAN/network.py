@@ -403,7 +403,7 @@ class SynthesisModule2(SynthesisModule):
     def set_for_chara_training(self, b):
         self.for_chara_training = b
         if b:
-            self.level = min(self.level, 2)
+            self.level = min(self.level, 3)
 
     def forward(self, chara_z, w, alpha):
         # w is [batch_size. 8, w_dim, 1, 1]
@@ -417,18 +417,22 @@ class SynthesisModule2(SynthesisModule):
             x = F.interpolate(x, size=(256, 256), mode = "bilinear")
             return x
         
-        x = F.interpolate(320, scale_factor=2, mode="bilinear")
+        x = F.interpolate(x, scale_factor=2, mode="bilinear")
         x = self.first_conv(x)
 
+
+
+        if self.for_chara_training:
+            if self.level == 2:
+                x =  self.to_monos[1](x)
+                return F.interpolate(x, size=(256, 256), mode = "bicubic")
+            else:
+                return self.chara_training_layer(x)
 
         for i in range(0, level-3):
             x = self.blocks[i](x, w[:, i*2], w[:, i*2+1])
         x2 = x
-        x2= self.blocks[level-2](x2, w[:, i*2], w[:, i*2+1])
-
-        if self.for_chara_training and self.level == 3:
-            return self.chara_training_layer(x2)
-
+        x2= self.blocks[level-3](x2, w[:, (level-3)*2], w[:, (level-3)*2+1])
 
         x2 = self.to_monos[level-1](x2)
 

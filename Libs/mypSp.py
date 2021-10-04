@@ -60,7 +60,7 @@ class MyPSP(nn.Module):
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
         style_pairs = [self.style_encoder(style_pairs[:, i]) for i in range(pair_n)]
 
-        style_pairs = torch.stack(style_pairs).sum(0)
+        style_pairs = torch.stack(style_pairs).mean(0)
 
 
         res =  self.style_gen(chara_images, style_pairs, alpha)

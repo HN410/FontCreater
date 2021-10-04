@@ -123,6 +123,7 @@ class MyPSPCharaDataset(data.Dataset):
         self.charaList = charaList
         self.transform = transforms.Compose([ 
             transforms.Grayscale(), 
+            transforms.ToTensor(), 
             transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN,
                                      FontGeneratorDataset.IMAGE_VAR)
         ])
@@ -137,8 +138,8 @@ class MyPSPCharaDataset(data.Dataset):
         # まず、入力されたindexを補正
         image = self.transform(CharacterChooser.__getImage__(FontTools.STANDARDFONT, 
                                                             self.charaList[index]))
-        # FontGeneratorDatasetとあうようにリストに入れる
-        return [image]
+        image.view(1, 256, 256)
+        return image
 
 
 class MyPSPBatchSampler(torch.utils.data.sampler.BatchSampler):
