@@ -568,11 +568,12 @@ class DBlock(nn.Module):
 
 
 class DLastBlock(nn.Module):
+    # ここで特徴量マップのサイズが4から1になる
     def __init__(self, input_dim, label_size):
         super().__init__()
 
         self.conv1 = WSConv2d(input_dim, input_dim, 3, 1, 1)
-        self.conv2 = WSConv2d(input_dim, input_dim, 4, 1, 0)
+        self.conv2 = WSConv2d(input_dim, input_dim, 4, 1, 0) # [B, dim, 4, 4] → [B, dim', 1, 1]
         self.conv3 = WSConv2d(input_dim, label_size, 1, 1, 0, gain=1)
         self.activation = nn.LeakyReLU(negative_slope=0.2)
 
@@ -586,7 +587,7 @@ class DLastBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, settings, label_size):
+    def __init__(self, settings):
         super().__init__()
 
         use_blur = settings["use_blur"]
@@ -617,10 +618,11 @@ class Discriminator(nn.Module):
         self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
 
     def set_level(self, level):
-        self.level.fill_(level)
+        self.level = level
 
     def forward(self, x, alpha):
-        level = self.level.item()
+        level = self.level
+        x = F.interpolate(x, size=(2**(1+level), 2**(1+level)), mode="bicubic")
 
         if level == 1:
             x = self.from_monos[-1](x)
@@ -631,7 +633,7 @@ class Discriminator(nn.Module):
             x2 = self.activation(x2)
             x2 = self.blocks[-level](x2)
 
-            if alpha == 1:
+            if alpha.item() == 1:
                 x = x2
             else:
                 x1 = F.interpolate(x, scale_factor=0.5, mode=self.downsample_mode)
