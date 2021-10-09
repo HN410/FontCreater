@@ -585,9 +585,54 @@ class DLastBlock(nn.Module):
         x = self.conv3(x)
         return x
 
+DISCRIMINATOR_LINEAR_NS = [16, 4, 1]
+class Discriminator2(nn.Module):
+
+    def __init__(self, settings):
+        # 変換前後の画像、教師データともに同じネットワークで畳み込んでそれを全結合層につないで判定する
+        self.discriminator = Discriminator(settings, DISCRIMINATOR_LINEAR_NS[0])
+
+        self.linears = nn.ModuleList([
+            [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
+                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]
+        ])
+        self.activation = nn.LeakyReLU(0.2)
+
+    def forward(self, before, after, teachers, alpha):
+        # before, after ... 変換したい文字のゴシック体、変換後の画像
+        #   [B, 1, 256, 256]
+        # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
+        #   [B, pair_n, 2, 1, 256, 256]
+        # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
+
+        # 教師データも含めて差分をとって、すべてDiscriminatorに入力
+        # after, teachers → [B, DISCRIMINATOR_LINEAR_NS[0]]
+        after = after - before
+        after = self.discriminator(after)
+
+        pair_n = teachers.size()[1]
+        teachers = teachers[:, :, 1] - teachers[:, :, 0]
+        teachers = [self.discriminator(teachers[:, i]) for i in range(pair_n)]
+        teachers = torch.stack(teachers).mean(0)
+
+        # [B, 2 * DISCRIMINATOR_LINEAR_NS[0]]
+        after = torch.cat([after, teachers], 1)
+
+        # この２つをまとめて全結合層へ
+        for linear in self.linears:
+            after = linear(after)
+            after = self.activation(after)
+
+        #  [B, 1]
+
+        return after
+
+
+
 
 class Discriminator(nn.Module):
-    def __init__(self, settings):
+    # 改造版 最終出力が[B, output_dim]になるように
+    def __init__(self, settings, output_dim):
         super().__init__()
 
         use_blur = settings["use_blur"]
@@ -610,10 +655,11 @@ class Discriminator(nn.Module):
             DBlock(128, 256, use_blur),
             DBlock(256, 256, use_blur),
             DBlock(256, 256, use_blur),
-            DLastBlock(256, 1)
+            DLastBlock(256, output_dim)
         ])
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)
+        self.output_dim = output_dim
 
         self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
 
@@ -621,6 +667,7 @@ class Discriminator(nn.Module):
         self.level = level
 
     def forward(self, x, alpha):
+
         level = self.level
         x = F.interpolate(x, size=(2**(1+level), 2**(1+level)), mode="bicubic")
 
@@ -645,7 +692,7 @@ class Discriminator(nn.Module):
             for l in range(1, level):
                 x = self.blocks[-level+l](x)
 
-        return x.view([-1, 1])
+        return x.view([-1, self.output_dim])
 
 def get_setting_json():
     dirname = os.path.dirname(__file__)
