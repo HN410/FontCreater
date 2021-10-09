@@ -610,7 +610,7 @@ class Discriminator(nn.Module):
             DBlock(128, 256, use_blur),
             DBlock(256, 256, use_blur),
             DBlock(256, 256, use_blur),
-            DLastBlock(256, self.label_size)
+            DLastBlock(256, 1)
         ])
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)
