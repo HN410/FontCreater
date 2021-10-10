@@ -585,17 +585,18 @@ class DLastBlock(nn.Module):
         x = self.conv3(x)
         return x
 
-DISCRIMINATOR_LINEAR_NS = [16, 4, 1]
+DISCRIMINATOR_LINEAR_NS = [32, 8, 1]
 class Discriminator2(nn.Module):
 
     def __init__(self, settings):
         # 変換前後の画像、教師データともに同じネットワークで畳み込んでそれを全結合層につないで判定する
-        self.discriminator = Discriminator(settings, DISCRIMINATOR_LINEAR_NS[0])
+        super().__init__()
+        self.discriminator = Discriminator(settings, DISCRIMINATOR_LINEAR_NS[0]//2)
 
-        self.linears = nn.ModuleList([
+        self.linears = nn.ModuleList(
             [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
                     for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]
-        ])
+        )
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, before, after, teachers, alpha):
@@ -608,11 +609,11 @@ class Discriminator2(nn.Module):
         # 教師データも含めて差分をとって、すべてDiscriminatorに入力
         # after, teachers → [B, DISCRIMINATOR_LINEAR_NS[0]]
         after = after - before
-        after = self.discriminator(after)
+        after = self.discriminator(after, alpha)
 
         pair_n = teachers.size()[1]
         teachers = teachers[:, :, 1] - teachers[:, :, 0]
-        teachers = [self.discriminator(teachers[:, i]) for i in range(pair_n)]
+        teachers = [self.discriminator(teachers[:, i], alpha) for i in range(pair_n)]
         teachers = torch.stack(teachers).mean(0)
 
         # [B, 2 * DISCRIMINATOR_LINEAR_NS[0]]
