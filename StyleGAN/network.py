@@ -517,7 +517,7 @@ class Generator(nn.Module):
             fakes = self.synthesis_module(chara_z, z, alpha)
             
 
-        return torch.nn.Sigmoid(fakes)
+        return torch.nn.Sigmoid()(fakes)
 
     def write_histogram(self, writer, step):
         # for name, param in self.latent_transform.named_parameters():
