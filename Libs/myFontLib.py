@@ -146,7 +146,7 @@ class CharacterChooser:
                 beforeN = checkN
         return ans
     
-    def getImageFromSampleList(self, sampleList, transform):
+    def getImageFromSampleList(self, sampleList, transform, transformOnlyTeachers=None):
         # sampleList(文字のリスト)から訓練画像を得る
         ans = [[] for i in range(len(sampleList))]
         for i, sampleCharacter in enumerate(sampleList):
@@ -154,18 +154,20 @@ class CharacterChooser:
             target = CharacterChooser.__getImage__(self.fontPath, sampleCharacter)
             standard = self.transform(standard)
             target = self.transform(target)
+            if not (transformOnlyTeachers is None):
+                target = transformOnlyTeachers(target)
             if not (transform is None):
                 standard = transform(standard)
                 target = transform(target)
             ans[i] = [standard, target]
         return ans 
     
-    def getSampledImagePair(self, sampleN: int, transform = None, useTensor= False):
+    def getSampledImagePair(self, sampleN: int, transform = None,  transformOnlyTeachers=None, useTensor= False):
         # このフォントが扱える文字の中から(最大)sampleN個サンプリングして、
         # 基準となるフォントのペアの画像として返す
 
         sampleList = self.sample(sampleN)
-        return self.getImageFromSampleList(sampleList, transform)
+        return self.getImageFromSampleList(sampleList, transform, transformOnlyTeachers)
 
 
 # 以下、集めたフォントの品質確認（漢字に対応するかなど）をするモジュール

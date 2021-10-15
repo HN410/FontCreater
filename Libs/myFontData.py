@@ -15,8 +15,10 @@ class FontGeneratorDataset(data.Dataset):
     IMAGE_MEAN = 0.8893
     IMAGE_VAR = 0.0966
 
+    IMAGE_WH = 256
+
     def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list,\
-         useTensor=True, startInd = 0, indN = None, isForValid = None, useAugmentation = False):
+         useTensor=True, startInd = 0, indN = None, isForValid = None, augmentationP = None):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
         #  imageN ... ペア画像を出力する数の範囲(要素は２つ)
@@ -26,6 +28,7 @@ class FontGeneratorDataset(data.Dataset):
         #  indN ...startIndからindN個のフォントのみを使う。NoneならstartInd以降すべて
         #  isForValid ... validationなどで、常に固定したデータで出力をしたいときに使う
         # 　　getInputListForVで取得したディクショナリをここに入れればよい。
+        #  augmentationP ... オーグメンテーションをする確率。Noneなら0, floatの二次元リストを受け取る
         self.fontTools = fontTools
         self.fontList = FontTools.getFontPathList()
         self.compatibleDict = compatibleDict
@@ -38,7 +41,7 @@ class FontGeneratorDataset(data.Dataset):
         else:
             self.indN = indN
 
-        self.transform = transforms.Compose([
+        self.normalize = transforms.Compose([
             transforms.Normalize(self.IMAGE_MEAN, self.IMAGE_VAR)
         ])
         if(isForValid is not None):
@@ -46,6 +49,8 @@ class FontGeneratorDataset(data.Dataset):
             self.fixedInput = isForValid
         else:
             self.isForValid = False
+        
+        self.augmentationP = augmentationP
         
 
     def __len__(self):
@@ -65,11 +70,16 @@ class FontGeneratorDataset(data.Dataset):
 
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                 self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
+        beforeNormalize= None
+        if(self.augmentationP != None):
+            beforeNormalize = \
+                 transforms.Compose(MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP[0], self.augmentationP[1]))
+
         if(self.isForValid):
-            imageList = charaChooser.getImageFromSampleList(self.fixedInput[index], self.transform)
+            imageList = charaChooser.getImageFromSampleList(self.fixedInput[index], self.normalize, beforeNormalize)
         else:
             sampleN = self.sampleN
-            imageList = charaChooser.getSampledImagePair(sampleN, self.transform)
+            imageList = charaChooser.getSampledImagePair(sampleN, self.normalize, beforeNormalize)
 
         convertedPair = imageList[0]
         teachers = torch.stack([torch.stack(i, 0) for i in imageList[1:]], 0)
