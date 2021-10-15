@@ -3,6 +3,8 @@ import torch
 from torchvision.transforms.transforms import Grayscale
 from .myFontLib import *
 import torch.utils.data as data
+from torchvision.transforms import functional as tvf
+
 class FontGeneratorDataset(data.Dataset):
     # ゴシック体と各フォントのペア画像の組を出力するデータセット
 
@@ -14,7 +16,7 @@ class FontGeneratorDataset(data.Dataset):
     IMAGE_VAR = 0.0966
 
     def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list,\
-         useTensor=True, startInd = 0, indN = None, isForValid = None):
+         useTensor=True, startInd = 0, indN = None, isForValid = None, useAugmentation = False):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
         #  imageN ... ペア画像を出力する数の範囲(要素は２つ)
@@ -44,6 +46,7 @@ class FontGeneratorDataset(data.Dataset):
             self.fixedInput = isForValid
         else:
             self.isForValid = False
+        
 
     def __len__(self):
         return self.indN
@@ -168,5 +171,47 @@ class MyPSPBatchSampler(torch.utils.data.sampler.BatchSampler):
     
     def __len__(self):
         return self.len // self.batchSize
+
+
+class MyPSPAugmentation:
+    ROTATE_LIMIT = 15
+    TRANSLATE_LIMIT = 5
+    SCALE_LIMIT = 0.1
+    PERSPECTIVE_LIMIT = 0.1
+
+    @classmethod
+    def getTransform(cls, imageWH, affineP, perspectiveP):
+        useAffine = random.random() < affineP
+        usePerspective = random.random() < perspectiveP
+        if(not(useAffine or usePerspective)):
+            return None
+        angle =  translate =  scale = shear =  interpolation = None
+        if(useAffine):
+            angle = random.uniform(-1*cls.ROTATE_LIMIT, cls.ROTATE_LIMIT)
+            translate = [random.uniform(-1*cls.TRANSLATE_LIMIT, cls.TRANSLATE_LIMIT),
+                             random.uniform(-1*cls.TRANSLATE_LIMIT, cls.TRANSLATE_LIMIT)]
+            scale = random.uniform(1-2*cls.SCALE_LIMIT, 1+cls.SCALE_LIMIT)
+            shear = [random.uniform(-1*cls.SCALE_LIMIT, cls.SCALE_LIMIT), random.uniform(-1*cls.SCALE_LIMIT, cls.SCALE_LIMIT)]
+            interpolation = tvf.InterpolationMode.BILINEAR if random.random() > 0.5 else \
+                                tvf.InterpolationMode.NEAREST
+        startPoints = endPoints = None
+        if(usePerspective):
+            limit = int(cls.PERSPECTIVE_LIMIT * imageWH) // 2
+            startPoints = [[0+random.randint(-1*limit, limit), 0+random.randint(-1*limit, limit)], 
+                            [0+random.randint(-1*limit, limit), imageWH+random.randint(-1*limit, limit)], 
+                            [imageWH+random.randint(-1*limit, limit), 0+random.randint(-1*limit, limit)], 
+                            [imageWH+random.randint(-1*limit, limit), imageWH+random.randint(-1*limit, limit)]]
+            endPoints = [[0+random.randint(-1*limit, 2*limit), 0+random.randint(-1*limit, 2*limit)], 
+                            [0+random.randint(-1*limit, 2*limit), imageWH+random.randint(-2*limit, limit)], 
+                            [imageWH+random.randint(-2*limit, limit), 0+random.randint(-1*limit, 2*limit)], 
+                            [imageWH+random.randint(-2*limit, limit), imageWH+random.randint(-2*limit, limit)]]
+        def transpose(img):
+            if(useAffine):
+                img = tvf.affine(img, angle, translate, scale, shear, interpolation)
+            if(usePerspective):
+                img = tvf.perspective(img, startPoints, endPoints)
+            return img
+        return transforms.Lambda(transpose)
+        
 
         
