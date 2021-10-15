@@ -188,11 +188,13 @@ class MyPSPAugmentation:
     TRANSLATE_LIMIT = 5
     SCALE_LIMIT = 0.1
     PERSPECTIVE_LIMIT = 0.1
+    NOISE_STRENGTH = 0.02
 
     @classmethod
-    def getTransform(cls, imageWH, affineP, perspectiveP):
-        useAffine = random.random() < affineP
-        usePerspective = random.random() < perspectiveP
+    def getTransform(cls, imageWH, probs):
+        useAffine = random.random() < probs[0]
+        usePerspective = random.random() < probs[1]
+        useNoise = random.random() < probs[2]
         if(not(useAffine or usePerspective)):
             return None
         angle =  translate =  scale = shear =  interpolation = None
@@ -220,6 +222,8 @@ class MyPSPAugmentation:
                 img = tvf.affine(img, angle, translate, scale, shear, interpolation)
             if(usePerspective):
                 img = tvf.perspective(img, startPoints, endPoints)
+            if(useNoise):
+                img += cls.NOISE_STRENGTH* torch.randn_like(img)
             return img
         return transforms.Lambda(transpose)
         
