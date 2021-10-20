@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import os 
 import json
 
+from torch.nn.modules.dropout import Dropout2d
+
 SETTING_JSON_PATH = "./settings.json"
 
 class PixelNormalizationLayer(nn.Module):
@@ -217,7 +219,7 @@ class SynthFirstBlock(nn.Module):
 
 
 class SynthBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, output_size, w_dim, upsample_mode, use_blur, use_noise):
+    def __init__(self, input_dim, output_dim, output_size, w_dim, upsample_mode, use_blur, use_noise, dropout_p = 0):
         super().__init__()
 
         self.conv1 = WSConv2d(input_dim, output_dim, 3, 1, 1)
@@ -242,6 +244,8 @@ class SynthBlock(nn.Module):
 
         self.upsample_mode = upsample_mode
 
+        self.dropout = nn.Dropout2d(p = dropout_p)
+
     def forward(self, x, w1, w2):
 
         x = F.interpolate(x, scale_factor=2, mode=self.upsample_mode)
@@ -253,6 +257,7 @@ class SynthBlock(nn.Module):
         x = self.adain1(x, w1)
 
         x = self.conv2(x)
+        x = self.dropout(x)
         x = self.noise2(x)
         x = self.activation(x)
         x = self.adain2(x, w2)
@@ -377,16 +382,16 @@ class SynthesisModule(nn.Module):
 
 class SynthesisModule2(SynthesisModule):
     # myPSP ver2用のsyntethis. forwardの入力が特徴量マップとwになる
-    def __init__(self, settings):
+    def __init__(self, settings, dropout_p = 0):
         super().__init__(settings, make_blocks=False)
         use_blur = settings["use_blur"]
         use_noise = settings["use_noise"]
         self.first_conv = WSConv2d(320, 256, 3, 1, 1, gain=1)
         self.blocks = nn.ModuleList([
-            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise),
-            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
+            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
+            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
+            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
+            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p)
         ])
         self.to_monos = nn.ModuleList([
             WSConv2d(320, 1, 1, 1, 0, gain=1),
@@ -449,12 +454,12 @@ class SynthesisModule2(SynthesisModule):
 
 
 class Generator(nn.Module):
-    def __init__(self, settings, for_chara_training = False, ver = 1):
+    def __init__(self, settings, for_chara_training = False, ver = 1, dropout_p = 0):
         super().__init__()
         if ver == 1:
             self.synthesis_module = SynthesisModule(settings)
         elif ver == 2:
-            self.synthesis_module = SynthesisModule2(settings)
+            self.synthesis_module = SynthesisModule2(settings, dropout_p)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
         # Truncation trick
@@ -545,7 +550,7 @@ class Generator(nn.Module):
 
 
 class DBlock(nn.Module):
-    def __init__(self, inpit_dim, output_dim, use_blur):
+    def __init__(self, inpit_dim, output_dim, use_blur, dropout_p = 0):
         super().__init__()
 
         self.conv1 = WSConv2d(inpit_dim, output_dim, 3, 1, 1)
@@ -555,6 +560,7 @@ class DBlock(nn.Module):
         else:
             self.blur = None
         self.activation = nn.LeakyReLU(negative_slope=0.2)
+        self.dropout = nn.Dropout2d(p = dropout_p)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -562,6 +568,7 @@ class DBlock(nn.Module):
         if self.blur is not None:
             x = self.blur(x)
         x = self.conv2(x)
+        x = self.dropout(x)
         x = self.activation(x)
         x = F.avg_pool2d(x, kernel_size=2)
         return x
@@ -569,16 +576,18 @@ class DBlock(nn.Module):
 
 class DLastBlock(nn.Module):
     # ここで特徴量マップのサイズが4から1になる
-    def __init__(self, input_dim, label_size):
+    def __init__(self, input_dim, label_size, dropout_p = 0):
         super().__init__()
 
         self.conv1 = WSConv2d(input_dim, input_dim, 3, 1, 1)
         self.conv2 = WSConv2d(input_dim, input_dim, 4, 1, 0) # [B, dim, 4, 4] → [B, dim', 1, 1]
         self.conv3 = WSConv2d(input_dim, label_size, 1, 1, 0, gain=1)
         self.activation = nn.LeakyReLU(negative_slope=0.2)
+        self.dropout = nn.Dropout2d(dropout_p)
 
     def forward(self, x):
         x = self.conv1(x)
+        x = self.dropout(x)
         x = self.activation(x)
         x = self.conv2(x)
         x = self.activation(x)
@@ -588,10 +597,10 @@ class DLastBlock(nn.Module):
 DISCRIMINATOR_LINEAR_NS = [32, 8, 1]
 class Discriminator2(nn.Module):
 
-    def __init__(self, settings):
+    def __init__(self, settings, dropout_p = 0):
         # 変換前後の画像、教師データともに同じネットワークで畳み込んでそれを全結合層につないで判定する
         super().__init__()
-        self.discriminator = Discriminator(settings, DISCRIMINATOR_LINEAR_NS[0]//2)
+        self.discriminator = Discriminator(settings, DISCRIMINATOR_LINEAR_NS[0]//2, dropout_p= dropout_p)
 
         self.linears = nn.ModuleList(
             [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
@@ -633,7 +642,7 @@ class Discriminator2(nn.Module):
 
 class Discriminator(nn.Module):
     # 改造版 最終出力が[B, output_dim]になるように
-    def __init__(self, settings, output_dim):
+    def __init__(self, settings, output_dim, dropout_p = 0):
         super().__init__()
 
         use_blur = settings["use_blur"]
@@ -650,13 +659,13 @@ class Discriminator(nn.Module):
         ])
 
         self.blocks = nn.ModuleList([
-            DBlock(16, 32, use_blur),
-            DBlock(32, 64, use_blur),
-            DBlock(64, 128, use_blur),
-            DBlock(128, 256, use_blur),
-            DBlock(256, 256, use_blur),
-            DBlock(256, 256, use_blur),
-            DLastBlock(256, output_dim)
+            DBlock(16, 32, use_blur, dropout_p=dropout_p),
+            DBlock(32, 64, use_blur, dropout_p=dropout_p),
+            DBlock(64, 128, use_blur, dropout_p=dropout_p),
+            DBlock(128, 256, use_blur, dropout_p=dropout_p),
+            DBlock(256, 256, use_blur, dropout_p=dropout_p),
+            DBlock(256, 256, use_blur, dropout_p=dropout_p),
+            DLastBlock(256, output_dim, dropout_p=dropout_p)
         ])
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)

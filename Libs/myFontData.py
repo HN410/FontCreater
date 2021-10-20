@@ -71,9 +71,11 @@ class FontGeneratorDataset(data.Dataset):
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                 self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
         beforeNormalize= None
-        if(self.augmentationP != None):
-            beforeNormalize = \
-                 transforms.Compose(MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP[0], self.augmentationP[1]))
+        if(self.augmentationP is not  None):
+
+            beforeNormalize = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
+            if(beforeNormalize is not None):
+                beforeNormalize = transforms.Compose([beforeNormalize])
 
         if(self.isForValid):
             imageList = charaChooser.getImageFromSampleList(self.fixedInput[index], self.normalize, beforeNormalize)
@@ -188,7 +190,7 @@ class MyPSPAugmentation:
     TRANSLATE_LIMIT = 5
     SCALE_LIMIT = 0.1
     PERSPECTIVE_LIMIT = 0.1
-    NOISE_STRENGTH = 0.02
+    NOISE_STRENGTH = 0.003
 
     @classmethod
     def getTransform(cls, imageWH, probs):
@@ -219,9 +221,9 @@ class MyPSPAugmentation:
                             [imageWH+random.randint(-2*limit, limit), imageWH+random.randint(-2*limit, limit)]]
         def transpose(img):
             if(useAffine):
-                img = tvf.affine(img, angle, translate, scale, shear, interpolation)
+                img = tvf.affine(img, angle, translate, scale, shear, interpolation, fill = [1])
             if(usePerspective):
-                img = tvf.perspective(img, startPoints, endPoints)
+                img = tvf.perspective(img, startPoints, endPoints, fill = [1])
             if(useNoise):
                 img += cls.NOISE_STRENGTH* torch.randn_like(img)
             return img

@@ -13,7 +13,7 @@ from StyleGAN.network import *
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
-    def __init__(self, ver = 1):
+    def __init__(self, ver = 1, dropout_p = 0):
         # chara_encoder ... どの文字かをエンコード
         # style_encoder ... 複数のフォントの組からスタイル情報をエンコード
         # style_gen ... エンコーダから得られた情報をもとにフォントを構成
@@ -29,7 +29,7 @@ class MyPSP(nn.Module):
         self.chara_encoder._change_in_channels(1)
         self.style_encoder._change_in_channels(1)
         gen_settings = get_setting_json()
-        self.style_gen = Generator(gen_settings["network"], ver=ver)
+        self.style_gen = Generator(gen_settings["network"], ver=ver, dropout_p=dropout_p)
         self.for_chara_training = False
         self.ver = ver
     
