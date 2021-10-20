@@ -607,6 +607,9 @@ class Discriminator2(nn.Module):
                     for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]
         )
         self.activation = nn.LeakyReLU(0.2)
+    
+    def set_level(self, level):
+        self.discriminator.set_level(level)
 
     def forward(self, before, after, teachers, alpha):
         # before, after ... 変換したい文字のゴシック体、変換後の画像
