@@ -193,7 +193,7 @@ class MyPSPAugmentation:
     NOISE_STRENGTH = 0.003
 
     @classmethod
-    def getTransform(cls, imageWH, probs):
+    def getTransform(cls, imageWH, probs, device = "cpu"):
         useAffine = random.random() < probs[0]
         usePerspective = random.random() < probs[1]
         useNoise = random.random() < probs[2]
@@ -225,9 +225,24 @@ class MyPSPAugmentation:
             if(usePerspective):
                 img = tvf.perspective(img, startPoints, endPoints, fill = [1])
             if(useNoise):
-                img += cls.NOISE_STRENGTH* torch.randn_like(img)
+                size = img.size()
+                new  = img+ 10*cls.NOISE_STRENGTH* torch.randn(size).to(device)
+                return new
             return img
         return transforms.Lambda(transpose)
+    
+    @classmethod
+    def getNoisedImages(cls, data, prob, device = "cpu"):
+        # データ郡を受け取って、確率でノイズの入ったデータを返す
+        # teachers [B, teachersN, 1, 256, 256]
+        transform = cls.getTransform(256, [0, 0, prob], device)
+        if(transform is None):
+            return data
+        ans = []
+        for e in data:
+            ans.append(transform(e))
+
+        return ans
         
 
         
