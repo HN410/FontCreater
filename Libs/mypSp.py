@@ -74,7 +74,7 @@ class MyPSPLoss(nn.Module):
     MSE_N = 3
     SCALE = 4
 
-    def __init__(self, onSharp = 0, rareP = 0):
+    def __init__(self, onSharp = 0, rareP = 0, separateN = 1):
         super().__init__()
         self.MSEs = nn.ModuleList([nn.MSELoss() for i in range(self.MSE_N)])
         if(0 < onSharp):
@@ -84,7 +84,7 @@ class MyPSPLoss(nn.Module):
             self.sharpLoss = None
         if(0 < rareP):
             self.rareP = rareP
-            self.rareLoss = ImageRarePixelLoss()
+            self.rareLoss = ImageRarePixelLoss(separateN)
         else:
             self.rareP = None
     def forward(self, outputs, targets):
@@ -142,13 +142,11 @@ class ImageRarePixelLoss(nn.Module):
     UPPER_LIM = 0.8
     LOWER_LIM = 0.2
 
-    def __init__(self):
+    def __init__(self, separateN = 1):
         super().__init__()
+        self.separateN = separateN
     
-    def forward(self, outputs, teachers):
-        size = tuple(teachers.size())
-        reversedSize = tuple(reversed(size))
-        # 該当の画像にあたるインデックスのみ
+    def getSectionLoss(self, reversedSize, outputs, teachers):
         uIndex = (teachers.sum(dim = (1, 2, 3)) >self.UPPER_LIM).broadcast_to(reversedSize).T
         uValue = torch.mul(torch.lt(teachers, self.LOWER_LIM), torch.square(outputs))
         uAns = torch.mul(uIndex, uValue).mean()
@@ -156,3 +154,23 @@ class ImageRarePixelLoss(nn.Module):
         lValue = torch.mul(torch.gt(teachers, self.UPPER_LIM), torch.square(outputs))
         lAns = torch.mul(lIndex, lValue).mean()
         return lAns + uAns
+
+    
+    def forward(self, outputs, teachers):
+        size = tuple(teachers.size())
+        reversedSize = tuple(reversed(size))
+        if(self.separateN == 1):
+            return self.getSectionLoss(reversedSize, outputs, teachers)
+        else:
+            size = (size[0], size[1], size[2]//self.separateN, size[3]//self.separateN)
+            reversedSize = tuple(reversed(size))
+            ans = torch.zeros(1, device=outputs.device)
+            splittedO1 = outputs.tensor_split(self.separateN, dim = 2)
+            splittedT1 = teachers.tensor_split(self.separateN, dim = 2)
+            for i in range(self.separateN):
+                splittedO2 = splittedO1[i].tensor_split(self.separateN, dim = 3)
+                splittedT2 = splittedT1[i].tensor_split(self.separateN, dim = 3)
+                for j in range(self.separateN):
+                    ans += self.getSectionLoss(reversedSize, splittedO2[j], splittedT2[j])
+            ans /= self.separateN ** 2
+            return ans
