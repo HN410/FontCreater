@@ -673,8 +673,8 @@ class Discriminator(nn.Module):
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)
         self.output_dim = output_dim
+        self.lebel = 1
 
-        self.register_buffer("level", torch.tensor(1, dtype=torch.int32))
 
     def set_level(self, level):
         self.level = level

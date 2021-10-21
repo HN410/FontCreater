@@ -197,7 +197,7 @@ class MyPSPAugmentation:
         useAffine = random.random() < probs[0]
         usePerspective = random.random() < probs[1]
         useNoise = random.random() < probs[2]
-        if(not(useAffine or usePerspective)):
+        if(not(useAffine or usePerspective or useNoise)):
             return None
         angle =  translate =  scale = shear =  interpolation = None
         if(useAffine):
