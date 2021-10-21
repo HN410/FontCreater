@@ -164,13 +164,18 @@ class ImageRarePixelLoss(nn.Module):
         else:
             size = (size[0], size[1], size[2]//self.separateN, size[3]//self.separateN)
             reversedSize = tuple(reversed(size))
-            ans = torch.zeros(1, device=outputs.device)
+            # ans = torch.zeros(1, device=outputs.device)
             splittedO1 = outputs.tensor_split(self.separateN, dim = 2)
             splittedT1 = teachers.tensor_split(self.separateN, dim = 2)
-            for i in range(self.separateN):
-                splittedO2 = splittedO1[i].tensor_split(self.separateN, dim = 3)
-                splittedT2 = splittedT1[i].tensor_split(self.separateN, dim = 3)
-                for j in range(self.separateN):
-                    ans += self.getSectionLoss(reversedSize, splittedO2[j], splittedT2[j])
-            ans /= self.separateN ** 2
+            # for i in range(self.separateN):
+            #     splittedO2 = splittedO1[i].tensor_split(self.separateN, dim = 3)
+            #     splittedT2 = splittedT1[i].tensor_split(self.separateN, dim = 3)
+            #     ans += torch.stack([self.getSectionLoss(reversed, o, t) for o, t in zip(splittedO2, splittedT2)]).mean()
+            # ans /= self.separateN 
+            ans = torch.stack([
+                torch.stack([self.getSectionLoss(reversedSize, o, t) for o, t in 
+                    zip(o1.tensor_split(self.separateN, dim = 3), t1.tensor_split(self.separateN, dim = 3))])
+                            for o1, t1 in zip(splittedO1, splittedT1)])
+            ans = ans.mean()
+
             return ans
