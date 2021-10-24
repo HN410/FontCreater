@@ -17,13 +17,11 @@ def g_lsgan_loss(discriminator, fakes, labels, alpha):
     return loss
 
 
-def d_wgan_loss(discriminator, trues, fakes, labels, alpha):
+def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers, alpha):
     epsilon_drift = 1e-3
     lambda_gp = 10
 
     batch_size = fakes.size()[0]
-    d_trues = discriminator.forward(trues, labels, alpha)
-    d_fakes = discriminator.forward(fakes, labels, alpha)
 
     loss_wd = d_trues.mean() - d_fakes.mean()
 
@@ -31,7 +29,7 @@ def d_wgan_loss(discriminator, trues, fakes, labels, alpha):
     epsilon = torch.rand(batch_size, 1, 1, 1, dtype=fakes.dtype, device=fakes.device)
     intpl = epsilon * fakes + (1 - epsilon) * trues
     intpl.requires_grad_()
-    f = discriminator.forward(intpl, labels, alpha)
+    f = discriminator.forward(before, intpl, teachers,  alpha)
     grad = torch.autograd.grad(f.sum(), intpl, create_graph=True)[0]
     grad_norm = grad.view(batch_size, -1).norm(dim=1)
     loss_gp = lambda_gp * ((grad_norm - 1) ** 2).mean()
@@ -46,8 +44,7 @@ def d_wgan_loss(discriminator, trues, fakes, labels, alpha):
     return loss, wd
 
 
-def g_wgan_loss(discriminator, fakes, labels, alpha):
-    d_fakes = discriminator.forward(fakes, labels, alpha)
+def g_wgan_loss(d_fakes):
     loss = -d_fakes.mean()
     return loss
 
