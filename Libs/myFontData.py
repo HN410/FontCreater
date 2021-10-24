@@ -226,7 +226,7 @@ class MyPSPAugmentation:
                 img = tvf.perspective(img, startPoints, endPoints, fill = [1])
             if(useNoise):
                 size = img.size()
-                new  = img+ 10*cls.NOISE_STRENGTH* torch.randn(size).to(device)
+                new  = img+ 20*cls.NOISE_STRENGTH* torch.randn(size).to(device)
                 return new
             return img
         return transforms.Lambda(transpose)
