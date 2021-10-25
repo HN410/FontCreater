@@ -17,7 +17,7 @@ def g_lsgan_loss(discriminator, fakes, labels, alpha):
     return loss
 
 
-def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers, alpha):
+def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers, alpha, phase):
     epsilon_drift = 1e-3
     lambda_gp = 10
 
@@ -26,13 +26,15 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers,
     loss_wd = d_trues.mean() - d_fakes.mean()
 
     # gradient penalty
-    epsilon = torch.rand(batch_size, 1, 1, 1, dtype=fakes.dtype, device=fakes.device)
-    intpl = epsilon * fakes + (1 - epsilon) * trues
-    intpl.requires_grad_()
-    f = discriminator.forward(before, intpl, teachers,  alpha)
-    grad = torch.autograd.grad(f.sum(), intpl, create_graph=True)[0]
-    grad_norm = grad.view(batch_size, -1).norm(dim=1)
-    loss_gp = lambda_gp * ((grad_norm - 1) ** 2).mean()
+    loss_gp = 0
+    if(phase == "train"):
+        epsilon = torch.rand(batch_size, 1, 1, 1, dtype=fakes.dtype, device=fakes.device)
+        intpl = epsilon * fakes + (1 - epsilon) * trues
+        intpl.requires_grad_()
+        f = discriminator.forward(before, intpl, teachers,  alpha)
+        grad = torch.autograd.grad(f.sum(), intpl, create_graph=True)[0]
+        grad_norm = grad.view(batch_size, -1).norm(dim=1)
+        loss_gp = lambda_gp * ((grad_norm - 1) ** 2).mean()
 
     # drift
     loss_drift = epsilon_drift * (d_trues ** 2).mean()
