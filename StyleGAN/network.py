@@ -8,6 +8,7 @@ import json
 
 from torch.nn.modules.dropout import Dropout2d
 
+from EfficientNet.model import *
 SETTING_JSON_PATH = "./settings.json"
 
 class PixelNormalizationLayer(nn.Module):
@@ -610,6 +611,52 @@ class Discriminator2(nn.Module):
     
     def set_level(self, level):
         self.discriminator.set_level(level)
+
+    def forward(self, before, after, teachers, alpha):
+        # before, after ... 変換したい文字のゴシック体、変換後の画像
+        #   [B, 1, 256, 256]
+        # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
+        #   [B, pair_n, 2, 1, 256, 256]
+        # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
+
+        # 教師データも含めて差分をとって、すべてDiscriminatorに入力
+        # after, teachers → [B, DISCRIMINATOR_LINEAR_NS[0]]
+        after = after - before
+        after = self.discriminator(after, alpha)
+
+        pair_n = teachers.size()[1]
+        teachers = teachers[:, :, 1] - teachers[:, :, 0]
+        teachers = [self.discriminator(teachers[:, i], alpha) for i in range(pair_n)]
+        teachers = torch.stack(teachers).mean(0)
+
+        # [B, 2 * DISCRIMINATOR_LINEAR_NS[0]]
+        after = torch.cat([after, teachers], 1)
+
+        # この２つをまとめて全結合層へ
+        for linear in self.linears:
+            after = linear(after)
+            after = self.activation(after)
+
+        #  [B, 1]
+
+        return after
+
+class Discriminator3(nn.Module):
+
+    def __init__(self, dropout_p = 0):
+        # 変換前後の画像、教師データともに同じネットワークで畳み込んでそれを全結合層につないで判定する
+        super().__init__()
+        blocks_args, global_params = get_model_params('efficientnet-b0', {})
+        self.discriminator = EfficientNetDiscriminator(blocks_args=blocks_args, global_params=global_params, outputN=DISCRIMINATOR_LINEAR_NS[0], dropout_p=dropout_p)
+
+        self.linears = nn.ModuleList(
+            [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
+                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]
+        )
+        self.activation = nn.LeakyReLU(0.2)
+    
+    # def set_level(self, level):
+    #     self.discriminator.set_level(level)
 
     def forward(self, before, after, teachers, alpha):
         # before, after ... 変換したい文字のゴシック体、変換後の画像

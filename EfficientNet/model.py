@@ -621,12 +621,13 @@ class EfficientNetDiscriminator(nn.Module):
         >>> outputs = model(inputs)
     """
 
-    def __init__(self, blocks_args=None, global_params=None, outputN = 1):
+    def __init__(self, blocks_args=None, global_params=None, outputN = 1, dropout_p = 0):
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
         self._blocks_args = blocks_args
+        self.dropout = nn.Dropout2d(p = dropout_p)
 
         # Batch norm parameters
         bn_mom = 1 - self._global_params.batch_norm_momentum
@@ -754,6 +755,7 @@ class EfficientNetDiscriminator(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
+            x = self.dropout(x)
             print(x.size())
 
         # Head
