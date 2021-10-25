@@ -220,10 +220,13 @@ class MyPSPAugmentation:
                             [imageWH+random.randint(-2*limit, limit), 0+random.randint(-1*limit, 2*limit)], 
                             [imageWH+random.randint(-2*limit, limit), imageWH+random.randint(-2*limit, limit)]]
         def transpose(img):
-            if(useAffine):
-                img = tvf.affine(img, angle, translate, scale, shear, interpolation, fill = [1])
-            if(usePerspective):
-                img = tvf.perspective(img, startPoints, endPoints, fill = [1])
+            if(useAffine  or usePerspective):
+                img = 1-img
+                if(useAffine):
+                    img = tvf.affine(img, angle, translate, scale, shear, interpolation, fill = [0])
+                if(usePerspective):
+                    img = tvf.perspective(img, startPoints, endPoints, fill = [0])
+                img = 1-img
             if(useNoise):
                 size = img.size()
                 new  = img+ 20*cls.NOISE_STRENGTH* torch.randn(size).to(device)
