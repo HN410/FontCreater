@@ -23,7 +23,7 @@ class MyPSP(nn.Module):
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
-                                load_fc=(ver == 1), advprop=False)
+                                load_fc=(ver < 2), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(True), advprop=False)
         self.chara_encoder._change_in_channels(1)
@@ -64,7 +64,10 @@ class MyPSP(nn.Module):
 
 
         res =  self.style_gen(chara_images, style_pairs, alpha)
-        return torch.sigmoid(res)
+        if(self.ver >= 3 ):
+            return res
+        else :
+            return torch.sigmoid(res)
 
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数

@@ -459,7 +459,7 @@ class Generator(nn.Module):
         super().__init__()
         if ver == 1:
             self.synthesis_module = SynthesisModule(settings)
-        elif ver == 2:
+        elif ver >= 2:
             self.synthesis_module = SynthesisModule2(settings, dropout_p)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
@@ -519,7 +519,7 @@ class Generator(nn.Module):
         fakes = None
         if self.ver == 1:
             fakes = self.synthesis_module(z, alpha)
-        elif self.ver == 2:
+        elif self.ver >= 2:
             fakes = self.synthesis_module(chara_z, z, alpha)
             
 
@@ -535,7 +535,7 @@ class Generator(nn.Module):
         # zは[Batch, z_dim * (6+2), 1, 1]
         # これをstyle_zのみ拡大
         batch_size = chara_z.size()[0]
-        if self.ver != 2:
+        if self.ver < 2:
             chara_z = [chara_z[:,self.z_dim * i : self.z_dim*(i+1) ] for i in range(chara_z.size()[1]//self.z_dim)]
             chara_z = [e.view(batch_size, 1, -1, 1, 1) for e in chara_z]
             chara_z = torch.cat(chara_z, 1)
@@ -544,7 +544,7 @@ class Generator(nn.Module):
         style_z =[style_z[:, self.z_dim*i : self.z_dim * (i+1)] for i in range(self.z_kind)] 
         z23 = [style_z[i].view(batch_size, 1, -1, 1, 1).expand(batch_size, 4, self.z_dim, 1, 1) for i in range(self.z_kind)]
 
-        if(self.ver == 2):
+        if(self.ver >= 2):
             return torch.cat(z23, 1)
 
         return torch.cat((chara_z, z23[0], z23[1]), 1)
@@ -647,7 +647,8 @@ class Discriminator3(nn.Module):
         # 変換前後の画像、教師データともに同じネットワークで畳み込んでそれを全結合層につないで判定する
         super().__init__()
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
-        self.discriminator = EfficientNetDiscriminator(blocks_args=blocks_args, global_params=global_params, outputN=DISCRIMINATOR_LINEAR_NS[0], dropout_p=dropout_p)
+        self.discriminator = EfficientNetDiscriminator(blocks_args=blocks_args, global_params=global_params, outputN=DISCRIMINATOR_LINEAR_NS[0]//2, dropout_p=dropout_p)
+        self.discriminator._change_in_channels(1)
 
         self.linears = nn.ModuleList(
             [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
@@ -668,11 +669,11 @@ class Discriminator3(nn.Module):
         # 教師データも含めて差分をとって、すべてDiscriminatorに入力
         # after, teachers → [B, DISCRIMINATOR_LINEAR_NS[0]]
         after = after - before
-        after = self.discriminator(after, alpha)
+        after = self.discriminator(after)
 
         pair_n = teachers.size()[1]
         teachers = teachers[:, :, 1] - teachers[:, :, 0]
-        teachers = [self.discriminator(teachers[:, i], alpha) for i in range(pair_n)]
+        teachers = [self.discriminator(teachers[:, i]) for i in range(pair_n)]
         teachers = torch.stack(teachers).mean(0)
 
         # [B, 2 * DISCRIMINATOR_LINEAR_NS[0]]

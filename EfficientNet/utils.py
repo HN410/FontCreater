@@ -610,10 +610,14 @@ def load_pretrained_weights(model, model_name, weights_path=None, load_fc=True, 
     else:
         state_dict.pop('_fc.weight')
         state_dict.pop('_fc.bias')
+        keys = list(state_dict.keys())
+        for key in keys:
+            state_dict[key + "_orig"] = state_dict[key].detach()
         ret = model.load_state_dict(state_dict, strict=False)
-        assert set(ret.missing_keys) == set(
-            ['_fc.weight', '_fc.bias']), 'Missing keys when loading pretrained weights: {}'.format(ret.missing_keys)
-    assert not ret.unexpected_keys, 'Missing keys when loading pretrained weights: {}'.format(ret.unexpected_keys)
+        # print(ret.missing_keys)
+        # assert set(ret.missing_keys) == set(
+        #     ['_fc.weight', '_fc.bias']), 'Missing keys when loading pretrained weights: {}'.format(ret.missing_keys)
+    # assert not ret.unexpected_keys, 'Missing keys when loading pretrained weights: {}'.format(ret.unexpected_keys)
 
     if verbose:
         print('Loaded pretrained weights for {}'.format(model_name))

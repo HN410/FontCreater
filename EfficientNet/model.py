@@ -49,7 +49,7 @@ class MBConvBlock(nn.Module):
         [3] https://arxiv.org/abs/1905.02244 (MobileNet v3)
     """
 
-    def __init__(self, block_args, global_params, image_size=None):
+    def __init__(self, block_args, global_params, image_size=None, useSN = False):
         super().__init__()
         self._block_args = block_args
         self._bn_mom = 1 - global_params.batch_norm_momentum  # pytorch's difference from tensorflow
@@ -62,18 +62,27 @@ class MBConvBlock(nn.Module):
         oup = self._block_args.input_filters * self._block_args.expand_ratio  # number of output channels
         if self._block_args.expand_ratio != 1:
             Conv2d = get_same_padding_conv2d(image_size=image_size)
-            self._expand_conv = Conv2d(in_channels=inp, out_channels=oup, kernel_size=1, bias=False)
-            self._bn0 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
+            if(not useSN):
+                self._expand_conv = Conv2d(in_channels=inp, out_channels=oup, kernel_size=1, bias=False)
+                self._bn0 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
+            else:
+                self._expand_conv = nn.utils.spectral_norm(Conv2d(in_channels=inp, out_channels=oup, kernel_size=1, bias=False))
             # image_size = calculate_output_image_size(image_size, 1) <-- this wouldn't modify image_size
 
         # Depthwise convolution phase
         k = self._block_args.kernel_size
         s = self._block_args.stride
         Conv2d = get_same_padding_conv2d(image_size=image_size)
-        self._depthwise_conv = Conv2d(
-            in_channels=oup, out_channels=oup, groups=oup,  # groups makes it depthwise
-            kernel_size=k, stride=s, bias=False)
-        self._bn1 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
+        if(not useSN):
+            self._depthwise_conv = Conv2d(
+                in_channels=oup, out_channels=oup, groups=oup,  # groups makes it depthwise
+                kernel_size=k, stride=s, bias=False)
+            self._bn1 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
+        else:
+            self._depthwise_conv = nn.utils.spectral_norm(Conv2d(
+                in_channels=oup, out_channels=oup, groups=oup,  # groups makes it depthwise
+                kernel_size=k, stride=s, bias=False))
+
         image_size = calculate_output_image_size(image_size, s)
 
         # Squeeze and Excitation layer, if desired
@@ -86,9 +95,13 @@ class MBConvBlock(nn.Module):
         # Pointwise convolution phase
         final_oup = self._block_args.output_filters
         Conv2d = get_same_padding_conv2d(image_size=image_size)
-        self._project_conv = Conv2d(in_channels=oup, out_channels=final_oup, kernel_size=1, bias=False)
-        self._bn2 = nn.BatchNorm2d(num_features=final_oup, momentum=self._bn_mom, eps=self._bn_eps)
+        if(not useSN):
+            self._project_conv = Conv2d(in_channels=oup, out_channels=final_oup, kernel_size=1, bias=False)
+            self._bn2 = nn.BatchNorm2d(num_features=final_oup, momentum=self._bn_mom, eps=self._bn_eps)
+        else:
+            self._project_conv = nn.utils.spectral_norm(Conv2d(in_channels=oup, out_channels=final_oup, kernel_size=1, bias=False))
         self._swish = MemoryEfficientSwish()
+        self.useSN = useSN
 
     def forward(self, inputs, drop_connect_rate=None):
         """MBConvBlock's forward function.
@@ -105,11 +118,13 @@ class MBConvBlock(nn.Module):
         x = inputs
         if self._block_args.expand_ratio != 1:
             x = self._expand_conv(inputs)
-            x = self._bn0(x)
+            if(not self.useSN):
+                x = self._bn0(x)
             x = self._swish(x)
 
         x = self._depthwise_conv(x)
-        x = self._bn1(x)
+        if(not self.useSN):
+            x = self._bn1(x)
         x = self._swish(x)
 
         # Squeeze and Excitation
@@ -122,7 +137,8 @@ class MBConvBlock(nn.Module):
 
         # Pointwise Convolution
         x = self._project_conv(x)
-        x = self._bn2(x)
+        if(not self.useSN):
+            x = self._bn2(x)
 
         # Skip connection and drop connect
         input_filters, output_filters = self._block_args.input_filters, self._block_args.output_filters
@@ -168,6 +184,7 @@ class EfficientNetEncoder(nn.Module):
     def __init__(self, blocks_args=None, global_params=None, isForCharacter = False, ver=1):
         # isForCharacter ... 文字エンコード用ならTrue, スタイルエンコード用ならFalse
         # ver ... version指定。1は文字のエンコード情報もadaInの入力。2はefficientNetの特徴量マップをそのままStyleGenの特徴量マップとして使う
+        #     ...3 spectral normalization を使用 
         # ※ver2は文字エンコードにのみ使う
 
         super().__init__()
@@ -175,6 +192,7 @@ class EfficientNetEncoder(nn.Module):
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
         self._blocks_args = blocks_args
+        self.useSN = ver >= 3
 
         # Batch norm parameters
         bn_mom = 1 - self._global_params.batch_norm_momentum
@@ -187,8 +205,11 @@ class EfficientNetEncoder(nn.Module):
         # Stem
         in_channels = 3  # rgb
         out_channels = round_filters(32, self._global_params)  # number of output channels
-        self._conv_stem = Conv2d(in_channels, out_channels, kernel_size=3, stride=2, bias=False)
-        self._bn0 = nn.BatchNorm2d(num_features=out_channels, momentum=bn_mom, eps=bn_eps)
+        if(ver < 3):
+            self._conv_stem = Conv2d(in_channels, out_channels, kernel_size=3, stride=2, bias=False)
+            self._bn0 = nn.BatchNorm2d(num_features=out_channels, momentum=bn_mom, eps=bn_eps)
+        else:
+            self._conv_stem = nn.utils.spectral_norm(Conv2d(in_channels, out_channels, kernel_size=3, stride=2, bias=False))
         image_size = calculate_output_image_size(image_size, 2)
 
         # Build blocks
@@ -203,20 +224,24 @@ class EfficientNetEncoder(nn.Module):
             )
 
             # The first block needs to take care of stride and filter size increase.
-            self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size))
+            self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size, useSN = self.useSN))
             image_size = calculate_output_image_size(image_size, block_args.stride)
             if block_args.num_repeat > 1:  # modify block_args to keep same output size
                 block_args = block_args._replace(input_filters=block_args.output_filters, stride=1)
             for _ in range(block_args.num_repeat - 1):
-                self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size))
+                self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size, useSN = self.useSN))
                 # image_size = calculate_output_image_size(image_size, block_args.stride)  # stride = 1
 
         # Head
         in_channels = block_args.output_filters  # output of final block
         out_channels = round_filters(1280, self._global_params)
         Conv2d = get_same_padding_conv2d(image_size=image_size)
-        self._conv_head = Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
-        self._bn1 = nn.BatchNorm2d(num_features=out_channels, momentum=bn_mom, eps=bn_eps)
+        if(not self.useSN):
+            self._conv_head = Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+            self._bn1 = nn.BatchNorm2d(num_features=out_channels, momentum=bn_mom, eps=bn_eps)
+        else:
+            self._conv_head = nn.utils.spectral_norm(Conv2d(in_channels, out_channels, kernel_size=1, bias=False))
+
 
         # Final linear layer
         self._avg_pooling = nn.AdaptiveAvgPool2d(1)
@@ -231,7 +256,7 @@ class EfficientNetEncoder(nn.Module):
         self.ver = ver
 
         # ver 2ではmap2Styleは使わない
-        if self.ver == 2:
+        if self.ver >= 2 and isForCharacter:
             return
 
         # 後でアップサンプルしたものと加算する特徴量マップ
@@ -302,7 +327,12 @@ class EfficientNetEncoder(nn.Module):
         endpoints = dict()
 
         # Stem
-        x = self._swish(self._bn0(self._conv_stem(inputs)))
+        x = None
+        if(self.useSN):
+            x = self._swish(self._conv_stem(inputs))
+        else:
+            x = self._swish(self._bn0(self._conv_stem(inputs)))
+            
         prev_x = x
 
         # Blocks
@@ -318,7 +348,10 @@ class EfficientNetEncoder(nn.Module):
             prev_x = x
 
         # Head
-        x = self._swish(self._bn1(self._conv_head(x)))
+        if(self.useSN):
+            x = self._swish(self._conv_head(x))
+        else:
+            x = self._swish(self._bn1(self._conv_head(x)))
         endpoints['reduction_{}'.format(len(endpoints) + 1)] = x
 
         return endpoints
@@ -334,7 +367,11 @@ class EfficientNetEncoder(nn.Module):
             layer in the efficientnet model.
         """
         # Stem
-        x = self._swish(self._bn0(self._conv_stem(inputs)))
+        x = None
+        if(self.useSN):
+            x = self._swish(self._conv_stem(inputs))
+        else:
+            x = self._swish(self._bn0(self._conv_stem(inputs)))
 
         used_maps = [] # encode時に加算される特徴マップ
         ans = []
@@ -345,9 +382,9 @@ class EfficientNetEncoder(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            if self.ver != 2 and (idx in self.used_maps_indices):
+            if self.ver < 2 and (idx in self.used_maps_indices):
                 used_maps.append(x) # 場合によってはclone()すべき？
-        if self.ver == 2:
+        if self.ver >= 2:
             # [B, 320, 8, 8]
             return x
         # Upsample
@@ -756,7 +793,6 @@ class EfficientNetDiscriminator(nn.Module):
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
             x = self.dropout(x)
-            print(x.size())
 
         # Head
         x = self._swish(self._conv_head(x))

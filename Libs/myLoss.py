@@ -17,7 +17,7 @@ def g_lsgan_loss(discriminator, fakes, labels, alpha):
     return loss
 
 
-def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers, alpha, phase):
+def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers, alpha, phase, useGradient = True):
     epsilon_drift = 1e-3
     lambda_gp = 10
 
@@ -27,7 +27,7 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes, before, teachers,
 
     # gradient penalty
     loss_gp = 0
-    if(phase == "train"):
+    if(phase == "train" and useGradient):
         epsilon = torch.rand(batch_size, 1, 1, 1, dtype=fakes.dtype, device=fakes.device)
         intpl = epsilon * fakes + (1 - epsilon) * trues
         intpl.requires_grad_()
