@@ -21,7 +21,7 @@ class MyPSP(nn.Module):
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
-        self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
+        self.style_encoder = EfficientNetEncoder(blocks_args, global_params, ver = ver)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
@@ -52,7 +52,10 @@ class MyPSP(nn.Module):
         chara_images = self.chara_encoder(chara_images)
 
         if self.for_chara_training:
-            return torch.sigmoid(self.style_gen(chara_images, None, alpha))
+            if self.ver >= 3:
+                return self.style_gen(chara_images, None, alpha)
+            else:
+                return torch.sigmoid(self.style_gen(chara_images, None, alpha))
         
         pair_n = style_pairs.size()[1]
         # ペアの差分をとる [B, pair_n, 1, 256, 256]

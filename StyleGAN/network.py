@@ -94,7 +94,7 @@ class Blur3x3(nn.Module):
 
 
 class WSConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, gain=np.sqrt(2)):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, gain=np.sqrt(2), ver = 1):
         super().__init__()
         weight = torch.empty(out_channels, in_channels, kernel_size, kernel_size)
         init.normal_(weight)
@@ -110,6 +110,15 @@ class WSConv2d(nn.Module):
     def forward(self, x):
         scaled_weight = self.weight * self.scale
         return F.conv2d(x, scaled_weight, self.bias, self.stride, self.padding)
+
+class SNConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super().__init__()
+        self.conv = nn.utils.spectral_norm(nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding))
+
+    def forward(self, x):
+        return self.conv(x)
+
 
 
 class WSConvTranspose2d(nn.Module):
@@ -220,11 +229,14 @@ class SynthFirstBlock(nn.Module):
 
 
 class SynthBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, output_size, w_dim, upsample_mode, use_blur, use_noise, dropout_p = 0):
+    def __init__(self, input_dim, output_dim, output_size, w_dim, upsample_mode, use_blur, use_noise, dropout_p = 0, ver = 1):
         super().__init__()
-
-        self.conv1 = WSConv2d(input_dim, output_dim, 3, 1, 1)
-        self.conv2 = WSConv2d(output_dim, output_dim, 3, 1, 1)
+        if(ver >= 3):
+            self.conv1 = SNConv2d(input_dim, output_dim, 3, 1, 1)
+            self.conv2 = SNConv2d(output_dim, output_dim, 3, 1, 1)
+        else:    
+            self.conv1 = WSConv2d(input_dim, output_dim, 3, 1, 1)
+            self.conv2 = WSConv2d(output_dim, output_dim, 3, 1, 1)
         if use_blur:
             self.blur = Blur3x3()
         else:
@@ -267,7 +279,7 @@ class SynthBlock(nn.Module):
 
 
 class SynthesisModule(nn.Module):
-    def __init__(self, settings, make_blocks = True):
+    def __init__(self, settings, make_blocks = True, ver = 1):
         super().__init__()
 
         self.w_dim = settings["w_dim"]
@@ -287,13 +299,13 @@ class SynthesisModule(nn.Module):
                 SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise)
             ])
             self.to_monos = nn.ModuleList([
-                WSConv2d(256, 1, 1, 1, 0, gain=1),
-                WSConv2d(256, 1, 1, 1, 0, gain=1),
-                WSConv2d(256, 1, 1, 1, 0, gain=1),
-                WSConv2d(128, 1, 1, 1, 0, gain=1),
-                WSConv2d(64, 1, 1, 1, 0, gain=1),
-                WSConv2d(32, 1, 1, 1, 0, gain=1),
-                WSConv2d(16, 1, 1, 1, 0, gain=1)
+                WSConv2d(256, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(256, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(256, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(128, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(64, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(32, 1, 1, 1, 0, gain=1, ver = ver),
+                WSConv2d(16, 1, 1, 1, 0, gain=1, ver = ver)
             ])
         
 
@@ -383,25 +395,38 @@ class SynthesisModule(nn.Module):
 
 class SynthesisModule2(SynthesisModule):
     # myPSP ver2用のsyntethis. forwardの入力が特徴量マップとwになる
-    def __init__(self, settings, dropout_p = 0):
+    def __init__(self, settings, dropout_p = 0, ver = 2):
         super().__init__(settings, make_blocks=False)
         use_blur = settings["use_blur"]
         use_noise = settings["use_noise"]
-        self.first_conv = WSConv2d(320, 256, 3, 1, 1, gain=1)
+        if(ver >= 3):
+            self.first_conv = SNConv2d(320, 256, 3, 1, 1)
+        else:
+            self.first_conv = WSConv2d(320, 256, 3, 1, 1, gain=1)
         self.blocks = nn.ModuleList([
-            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
-            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
-            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p),
-            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p)
+            SynthBlock(256, 128, 32, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p, ver = ver),
+            SynthBlock(128, 64, 64, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p, ver = ver),
+            SynthBlock(64, 32, 128, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p, ver = ver),
+            SynthBlock(32, 16, 256, self.w_dim, self.upsample_mode, use_blur, use_noise, dropout_p=dropout_p, ver = ver)
         ])
-        self.to_monos = nn.ModuleList([
-            WSConv2d(320, 1, 1, 1, 0, gain=1),
-            WSConv2d(256, 1, 1, 1, 0, gain=1),
-            WSConv2d(128, 1, 1, 1, 0, gain=1),
-            WSConv2d(64, 1, 1, 1, 0, gain=1),
-            WSConv2d(32, 1, 1, 1, 0, gain=1),
-            WSConv2d(16, 1, 1, 1, 0, gain=1)
-        ])
+        if(ver >= 3):
+            self.to_monos = nn.ModuleList([
+            SNConv2d(320, 1, 1, 1, 0),
+            SNConv2d(256, 1, 1, 1, 0),
+            SNConv2d(128, 1, 1, 1, 0),
+            SNConv2d(64, 1, 1, 1, 0),
+            SNConv2d(32, 1, 1, 1, 0),
+            SNConv2d(16, 1, 1, 1, 0)
+            ])
+        else:
+            self.to_monos = nn.ModuleList([
+            WSConv2d(320, 1, 1, 1, 0, gain=1, ver = ver),
+            WSConv2d(256, 1, 1, 1, 0, gain=1, ver = ver),
+            WSConv2d(128, 1, 1, 1, 0, gain=1, ver = ver),
+            WSConv2d(64, 1, 1, 1, 0, gain=1, ver = ver),
+            WSConv2d(32, 1, 1, 1, 0, gain=1, ver = ver),
+            WSConv2d(16, 1, 1, 1, 0, gain=1, ver = ver)
+            ])
 
     def set_level(self, level: int):
         assert 0 < level <= 6
@@ -460,7 +485,7 @@ class Generator(nn.Module):
         if ver == 1:
             self.synthesis_module = SynthesisModule(settings)
         elif ver >= 2:
-            self.synthesis_module = SynthesisModule2(settings, dropout_p)
+            self.synthesis_module = SynthesisModule2(settings, dropout_p, ver)
         self.style_mixing_prob = settings["style_mixing_prob"]
 
         # Truncation trick
