@@ -67,10 +67,8 @@ class MyPSP(nn.Module):
 
 
         res =  self.style_gen(chara_images, style_pairs, alpha)
-        if(self.ver >= 3 ):
-            return res
-        else :
-            return torch.sigmoid(res)
+
+        return torch.sigmoid(res)
 
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数

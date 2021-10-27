@@ -382,9 +382,9 @@ class EfficientNetEncoder(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            if self.ver < 2 and (idx in self.used_maps_indices):
+            if (self.ver < 2 or not self.isForCharacter) and (idx in self.used_maps_indices):
                 used_maps.append(x) # 場合によってはclone()すべき？
-        if self.ver >= 2 :
+        if self.ver <= 2 or self.isForCharacter:
             # [B, 320, 8, 8]
             return x
         # Upsample
