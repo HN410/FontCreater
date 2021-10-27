@@ -411,12 +411,12 @@ class SynthesisModule2(SynthesisModule):
         ])
         if(ver >= 3):
             self.to_monos = nn.ModuleList([
-            SNConv2d(320, 1, 1, 1, 0),
-            SNConv2d(256, 1, 1, 1, 0),
-            SNConv2d(128, 1, 1, 1, 0),
-            SNConv2d(64, 1, 1, 1, 0),
-            SNConv2d(32, 1, 1, 1, 0),
-            SNConv2d(16, 1, 1, 1, 0)
+            nn.Conv2d(320, 1, 1, 1, 0),
+            nn.Conv2d(256, 1, 1, 1, 0),
+            nn.Conv2d(128, 1, 1, 1, 0),
+            nn.Conv2d(64, 1, 1, 1, 0),
+            nn.Conv2d(32, 1, 1, 1, 0),
+            nn.Conv2d(16, 1, 1, 1, 0)
             ])
         else:
             self.to_monos = nn.ModuleList([
