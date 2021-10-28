@@ -78,7 +78,7 @@ class MyPSPLoss(nn.Module):
     MSE_N = 3
     SCALE = 4
 
-    def __init__(self, onSharp = 0, rareP = 0, separateN = 1):
+    def __init__(self, onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
         super().__init__()
         self.MSEs = nn.ModuleList([nn.MSELoss() for i in range(self.MSE_N)])
         if(0 < onSharp):
@@ -91,6 +91,10 @@ class MyPSPLoss(nn.Module):
             self.rareLoss = ImageRarePixelLoss(separateN)
         else:
             self.rareP = None
+        if(hingeLoss > 0):
+            self.hingeLoss = ImageHingeLoss()
+        else:
+            self.hingeLoss = None
     def forward(self, outputs, targets):
         # outputs, targetsともに[B, 1, W, H]
 
@@ -109,6 +113,10 @@ class MyPSPLoss(nn.Module):
         outputs = transforms.Compose([
             transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
                 FontGeneratorDataset.IMAGE_VAR)])(outputs)
+        
+        hingeLoss = 0
+        if(self.hingeLoss is not None):
+            hingeLoss = self.hingeLoss(outputs, targets)
 
         ans = [0] * self.MSE_N
         ans[0] = self.MSEs[0](outputs, targets)
@@ -120,7 +128,7 @@ class MyPSPLoss(nn.Module):
             targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
             ans[i+1] = self.MSEs[i+1](outputs, targets) * factor
         ans = torch.stack(ans)
-        return torch.mean(ans) + sharpScore + rareScore
+        return torch.mean(ans) + sharpScore + rareScore + hingeLoss
 
 class ImageSharpLoss(nn.Module):
     # 各ピクセルが0, 1に近いほど損失が小さくなる
@@ -137,6 +145,20 @@ class ImageSharpLoss(nn.Module):
         smaller = smaller * outputs**2
         bigger = bigger * (outputs-1)**2
         return (smaller + bigger).mean()
+
+class ImageHingeLoss(nn.Module):
+    # 0より大小で間違っている時のみ2乗損失を加える
+    # 正規化された後に入力すること
+    def __init___(self):
+        super().__init__()
+    
+    def forward(self, outputs, teachers):
+        biggerT = torch.ge(teachers, 0.)
+        smallerT = -1*torch.lt(teachers, 0.)
+        biggerO = torch.ge(outputs, 0.)
+        smallerO = torch.lt(outputs, 0.)
+        ans = biggerT * (smallerO ** 2) + smallerT * (biggerO)*2
+        return ans.mean()
 
 class ImageRarePixelLoss(nn.Module):
     # 教師画像が白が多いときに結果に黒、黒が多いときに結果に白が出るほどロスが小さくなる
