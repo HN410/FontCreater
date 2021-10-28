@@ -21,7 +21,7 @@ class MyPSP(nn.Module):
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
-        self.style_encoder = EfficientNetEncoder(blocks_args, global_params)
+        self.style_encoder = EfficientNetEncoder(blocks_args, global_params, ver = ver)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
@@ -155,8 +155,8 @@ class ImageHingeLoss(nn.Module):
     def forward(self, outputs, teachers):
         biggerT = torch.ge(teachers, 0.)
         smallerT = -1*torch.lt(teachers, 0.)
-        biggerO = torch.ge(outputs, 0.)
-        smallerO = torch.lt(outputs, 0.)
+        biggerO = torch.ge(outputs, 0.) * outputs
+        smallerO = torch.lt(outputs, 0.) * outputs
         ans = biggerT * (smallerO ** 2) + smallerT * (biggerO)*2
         return ans.mean()
 

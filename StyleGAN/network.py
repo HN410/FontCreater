@@ -5,6 +5,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 import os 
 import json
+from torch.nn.modules.batchnorm import BatchNorm2d
 
 from torch.nn.modules.dropout import Dropout2d
 
@@ -140,19 +141,30 @@ class WSConvTranspose2d(nn.Module):
 
 
 class AdaIN(nn.Module):
-    def __init__(self, dim, w_dim):
+    def __init__(self, dim, w_dim, ver = 1):
         super().__init__()
         self.dim = dim
         self.epsilon = 1e-8
-        self.scale_transform = WSConv2d(w_dim, dim, 1, 1, 0, gain=1)
-        self.bias_transform = WSConv2d(w_dim, dim, 1, 1, 0, gain=1)
+        self.ver = ver
+        if(ver >= 3):
+            self.scale_transform = SNConv2d(w_dim, dim, 1, 1, 0)
+            self.bias_transform = SNConv2d(w_dim, dim, 1, 1, 0)
+            self.bn0 = BatchNorm2d(dim)
+            self.bn1 = BatchNorm2d(dim)
+        else:
+            self.scale_transform = WSConv2d(w_dim, dim, 1, 1, 0, gain=1)
+            self.bias_transform = WSConv2d(w_dim, dim, 1, 1, 0, gain=1)
 
     def forward(self, x, w):
         x = F.instance_norm(x, eps=self.epsilon)
 
         # scale
+            
         scale = self.scale_transform(w)
         bias = self.bias_transform(w)
+        if(self.ver >= 3):
+            scale = self.bn0(scale)
+            bias = self.bn1(bias)
 
         return scale * x + bias
 
@@ -180,7 +192,7 @@ class NoiseLayer(nn.Module):
 
 
 class SynthFirstBlock(nn.Module):
-    def __init__(self, start_dim, output_dim, w_dim, base_image_init, use_noise):
+    def __init__(self, start_dim, output_dim, w_dim, base_image_init, use_noise, ver = 1):
         super().__init__()
 
         self.base_image = nn.Parameter(torch.empty(1, start_dim, 4, 4))
@@ -195,8 +207,13 @@ class SynthFirstBlock(nn.Module):
         else:
             print(f"Invalid base_image_init: {base_image_init}")
             exit(1)
+        self.ver = ver
+        if(ver >= 3):
+            self.conv = SNConv2d(start_dim, output_dim, 3, 1, 1)
+            self.bn0 = BatchNorm2d(output_dim)
+        else:
+            self.conv = WSConv2d(start_dim, output_dim, 3, 1, 1)
 
-        self.conv = WSConv2d(start_dim, output_dim, 3, 1, 1)
 
         self.noise1 = NoiseLayer(start_dim, 4)
         self.noise2 = NoiseLayer(output_dim, 4)
@@ -206,8 +223,8 @@ class SynthFirstBlock(nn.Module):
             self.noise2.noise_scale.zeros_()
             self.noise2.fixed = True
 
-        self.adain1 = AdaIN(start_dim, w_dim)
-        self.adain2 = AdaIN(output_dim, w_dim)
+        self.adain1 = AdaIN(start_dim, w_dim, ver)
+        self.adain2 = AdaIN(output_dim, w_dim, ver)
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)
 
@@ -221,6 +238,8 @@ class SynthFirstBlock(nn.Module):
         x = self.adain1(x, w1)
 
         x = self.conv(x)
+        if(self.ver >= 3):
+            self.bn0(x)
         x = self.noise2(x)
         x = self.activation(x)
         x = self.adain2(x, w2)
@@ -231,9 +250,12 @@ class SynthFirstBlock(nn.Module):
 class SynthBlock(nn.Module):
     def __init__(self, input_dim, output_dim, output_size, w_dim, upsample_mode, use_blur, use_noise, dropout_p = 0, ver = 1):
         super().__init__()
+        self.ver = ver
         if(ver >= 3):
             self.conv1 = SNConv2d(input_dim, output_dim, 3, 1, 1)
             self.conv2 = SNConv2d(output_dim, output_dim, 3, 1, 1)
+            self.bn1 = nn.BatchNorm2d(output_dim)
+            self.bn2 = nn.BatchNorm2d(output_dim)
         else:    
             self.conv1 = WSConv2d(input_dim, output_dim, 3, 1, 1)
             self.conv2 = WSConv2d(output_dim, output_dim, 3, 1, 1)
@@ -250,8 +272,8 @@ class SynthBlock(nn.Module):
             self.noise2.noise_scale.zeros_()
             self.noise2.fixed = True
 
-        self.adain1 = AdaIN(output_dim, w_dim)
-        self.adain2 = AdaIN(output_dim, w_dim)
+        self.adain1 = AdaIN(output_dim, w_dim, ver)
+        self.adain2 = AdaIN(output_dim, w_dim, ver)
 
         self.activation = nn.LeakyReLU(negative_slope=0.2)
 
@@ -263,6 +285,8 @@ class SynthBlock(nn.Module):
 
         x = F.interpolate(x, scale_factor=2, mode=self.upsample_mode)
         x = self.conv1(x)
+        if(self.ver >= 3):
+            x = self.bn1(x)
         if self.blur is not None:
             x = self.blur(x)
         x = self.noise1(x)
@@ -270,6 +294,8 @@ class SynthBlock(nn.Module):
         x = self.adain1(x, w1)
 
         x = self.conv2(x)
+        if(self.ver >= 3):
+            x = self.bn2(x)
         x = self.dropout(x)
         x = self.noise2(x)
         x = self.activation(x)
@@ -399,8 +425,10 @@ class SynthesisModule2(SynthesisModule):
         super().__init__(settings, make_blocks=False)
         use_blur = settings["use_blur"]
         use_noise = settings["use_noise"]
+        self.ver = ver
         if(ver >= 3):
             self.first_conv = SNConv2d(320, 256, 3, 1, 1)
+            self.first_bn = BatchNorm2d(256)
         else:
             self.first_conv = WSConv2d(320, 256, 3, 1, 1, gain=1)
         self.blocks = nn.ModuleList([
@@ -411,13 +439,14 @@ class SynthesisModule2(SynthesisModule):
         ])
         if(ver >= 3):
             self.to_monos = nn.ModuleList([
-            nn.Conv2d(320, 1, 1, 1, 0),
-            nn.Conv2d(256, 1, 1, 1, 0),
-            nn.Conv2d(128, 1, 1, 1, 0),
-            nn.Conv2d(64, 1, 1, 1, 0),
-            nn.Conv2d(32, 1, 1, 1, 0),
-            nn.Conv2d(16, 1, 1, 1, 0)
+            SNConv2d(320, 1, 1, 1, 0),
+            SNConv2d(256, 1, 1, 1, 0),
+            SNConv2d(128, 1, 1, 1, 0),
+            SNConv2d(64, 1, 1, 1, 0),
+            SNConv2d(32, 1, 1, 1, 0),
+            SNConv2d(16, 1, 1, 1, 0)
             ])
+            self.bns = nn.ModuleList([nn.BatchNorm2d(1) for i in range(len(self.to_monos))]) 
         else:
             self.to_monos = nn.ModuleList([
             WSConv2d(320, 1, 1, 1, 0, gain=1, ver = ver),
@@ -445,17 +474,24 @@ class SynthesisModule2(SynthesisModule):
 
         if level == 1:
             x = self.to_monos[0](x)
+            if(self.ver >= 3):
+                x = self.bns[0](x)
+
             x = F.interpolate(x, size=(256, 256), mode = "bilinear")
             return x
         
         x = F.interpolate(x, scale_factor=2, mode="bilinear")
         x = self.first_conv(x)
+        if(self.ver >= 3):
+            x = self.first_bn(x)
 
 
 
         if self.for_chara_training:
             if self.level == 2:
                 x =  self.to_monos[1](x)
+                if(self.ver >= 3):
+                    x = self.bns[1](x)
                 return F.interpolate(x, size=(256, 256), mode = "bicubic")
             else:
                 return self.chara_training_layer(x)
@@ -466,11 +502,17 @@ class SynthesisModule2(SynthesisModule):
         x2= self.blocks[level-3](x2, w[:, (level-3)*2], w[:, (level-3)*2+1])
 
         x2 = self.to_monos[level-1](x2)
+        if(self.ver >= 3):
+            x2 = self.bns[level-1](x2)
+
 
         if alpha.item() == 1:
             x = x2
         else:
             x1 = self.to_monos[level-2](x)
+            if(self.ver >= 3):
+                x1 = self.bns[level-2](x1)
+
             x1 = F.interpolate(x1, scale_factor=2, mode=self.upsample_mode)
             x = torch.lerp(x1, x2, alpha.item())
         
