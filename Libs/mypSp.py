@@ -75,12 +75,18 @@ class MyPSPLoss(nn.Module):
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
     # onSharpはImageSharpLossにかける係数
 
-    MSE_N = 3
+    MAIN_LOSS_N = 3
     SCALE = 4
 
-    def __init__(self, onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
+    # mode = mse, l1, crossE
+    def __init__(self, mode = "mse", onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
         super().__init__()
-        self.MSEs = nn.ModuleList([nn.MSELoss() for i in range(self.MSE_N)])
+        if(mode == "l1"):
+            self.mainLoss = nn.ModuleList([nn.L1Loss() for i in range(self.MAIN_LOSS_N)])    
+        elif(mode == "crossE"):
+            self.mainLoss = nn.ModuleList([nn.CrossEntropyLoss() for i in range(self.MAIN_LOSS_N)])
+        else:
+            self.mainLoss = nn.ModuleList([nn.MSELoss() for i in range(self.MAIN_LOSS_N)])
         if(0 < onSharp):
             self.onSharp = onSharp
             self.sharpLoss = ImageSharpLoss()
@@ -108,25 +114,25 @@ class MyPSPLoss(nn.Module):
             rareScore = self.rareLoss(outputs, targets)
             rareScore *= self.rareP
             
+        hingeLoss = 0
+        if(self.hingeLoss is not None):
+            hingeLoss = self.hingeLoss(outputs, targets)
 
         # outputsは正規化されていないので、正規化する
         outputs = transforms.Compose([
             transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
                 FontGeneratorDataset.IMAGE_VAR)])(outputs)
         
-        hingeLoss = 0
-        if(self.hingeLoss is not None):
-            hingeLoss = self.hingeLoss(outputs, targets)
 
-        ans = [0] * self.MSE_N
-        ans[0] = self.MSEs[0](outputs, targets)
+        ans = [0] * self.MAIN_LOSS_N
+        ans[0] = self.mainLoss[0](outputs, targets)
         # SCALE分の1した画像でも同様に二乗誤差をとってみる
         factor = 1
-        for i in range(self.MSE_N-1):
+        for i in range(self.MAIN_LOSS_N-1):
             factor *= self.SCALE ** 2
             outputs = F.interpolate(outputs, scale_factor=1/self.SCALE, mode="bilinear")
             targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
-            ans[i+1] = self.MSEs[i+1](outputs, targets) * factor
+            ans[i+1] = self.mainLoss[i+1](outputs, targets) * factor
         ans = torch.stack(ans)
         return torch.mean(ans) + sharpScore + rareScore + hingeLoss
 
@@ -147,39 +153,42 @@ class ImageSharpLoss(nn.Module):
         return (smaller + bigger).mean()
 
 class ImageHingeLoss(nn.Module):
-    # 0より大小で間違っている時のみ2乗損失を加える
-    # 正規化された後に入力すること
+    # 0より大小で間違っている時のみ損失を加える
+    # 正規化される前に入力すること
+    # teachers は正規化されていることに注意
+    eps = 1e-3
     def __init___(self):
         super().__init__()
     
     def forward(self, outputs, teachers):
         biggerT = torch.ge(teachers, 0.)
-        smallerT = -1*torch.lt(teachers, 0.)
-        biggerO = torch.ge(outputs, 0.) * outputs
-        smallerO = torch.lt(outputs, 0.) * outputs
-        ans = biggerT * (smallerO ** 2) + smallerT * (biggerO)*2
+        smallerT = torch.lt(teachers, 0.)
+        biggerO = 1 - torch.ge(outputs, 0.5) * outputs # -log(1-x)
+        smallerO = torch.lt(outputs, 0.5) * outputs + 1 # -log(x+1)
+        ans = - 1* biggerT * torch.log(smallerO + self.eps) - smallerT * torch.log(biggerO + self.eps)
         return ans.mean()
 
 class ImageRarePixelLoss(nn.Module):
     # 教師画像が白が多いときに結果に黒、黒が多いときに結果に白が出るほどロスが小さくなる
 
     #  正規化する前に入力すること
-
+    TEACHER_LIM = 0.5
     UPPER_LIM = 0.8
     LOWER_LIM = 0.2
+    eps = 1e-3
 
     def __init__(self, separateN = 1):
         super().__init__()
         self.separateN = separateN
     
     def getSectionLoss(self, reversedSize, outputs, teachers):
-        uIndex = (teachers.sum(dim = (1, 2, 3)) >self.UPPER_LIM).broadcast_to(reversedSize).T
-        uValue = torch.mul(torch.lt(teachers, self.LOWER_LIM), torch.square(outputs))
-        uAns = torch.mul(uIndex, uValue).mean()
-        lIndex = (teachers.sum(dim = (1, 2, 3)) <self.LOWER_LIM).broadcast_to(reversedSize).T
-        lValue = torch.mul(torch.gt(teachers, self.UPPER_LIM), torch.square(outputs))
-        lAns = torch.mul(lIndex, lValue).mean()
-        return lAns + uAns
+        uIndex = (teachers.mean(dim = (1, 2, 3)) >self.TEACHER_LIM).broadcast_to(reversedSize).T
+        uValue = torch.mul(torch.lt(teachers, self.LOWER_LIM), torch.log(outputs + self.eps))
+        uAns = torch.mul(uIndex, uValue).mean() # -log x
+        lIndex = (teachers.mean(dim = (1, 2, 3)) <-1*self.TEACHER_LIM).broadcast_to(reversedSize).T
+        lValue = torch.mul(torch.gt(teachers, self.UPPER_LIM), torch.log(1-outputs + self.eps))
+        lAns = torch.mul(lIndex, lValue).mean() # -log(1-x)
+        return -1 *lAns-uAns 
 
     
     def forward(self, outputs, teachers):

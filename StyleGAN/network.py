@@ -5,6 +5,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 import os 
 import json
+import itertools
 from torch.nn.modules.batchnorm import BatchNorm2d
 
 from torch.nn.modules.dropout import Dropout2d
@@ -718,8 +719,8 @@ class Discriminator3(nn.Module):
         self.discriminator._change_in_channels(1)
 
         self.linears = nn.ModuleList(
-            [nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1]) 
-                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]
+            list(itertools.chain.from_iterable([[nn.Dropout(dropout_p),  nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1])]
+                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]))
         )
         self.activation = nn.LeakyReLU(0.2)
     
