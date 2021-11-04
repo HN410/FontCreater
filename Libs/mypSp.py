@@ -70,6 +70,17 @@ class MyPSP(nn.Module):
 
         return torch.sigmoid(res)
 
+class SoftCrossEntropy(nn.Module):
+    eps = 1e-4
+    def __init__(self, mean, std):
+        super().__init__()
+        self.mean = mean
+        self.std = std
+    def forward(self, out, teacher):
+        teacher = teacher * self.std + self.mean
+        out = teacher * torch.log(out + self.eps) + (1-teacher) * torch.log(1-out + self.eps)
+        return out.mean()
+
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
@@ -81,10 +92,12 @@ class MyPSPLoss(nn.Module):
     # mode = mse, l1, crossE
     def __init__(self, mode = "mse", onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
         super().__init__()
+        self.useNormalize = True
         if(mode == "l1"):
             self.mainLoss = nn.ModuleList([nn.L1Loss() for i in range(self.MAIN_LOSS_N)])    
         elif(mode == "crossE"):
-            self.mainLoss = nn.ModuleList([nn.CrossEntropyLoss() for i in range(self.MAIN_LOSS_N)])
+            self.mainLoss = nn.ModuleList([SoftCrossEntropy(FontGeneratorDataset.IMAGE_MEAN, FontGeneratorDataset.IMAGE_VAR) for i in range(self.MAIN_LOSS_N)])
+            self.useNormalize = False
         else:
             self.mainLoss = nn.ModuleList([nn.MSELoss() for i in range(self.MAIN_LOSS_N)])
         if(0 < onSharp):
@@ -119,10 +132,11 @@ class MyPSPLoss(nn.Module):
             hingeLoss = self.hingeLoss(outputs, targets)
 
         # outputsは正規化されていないので、正規化する
-        outputs = transforms.Compose([
-            transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
-                FontGeneratorDataset.IMAGE_VAR)])(outputs)
-        
+        if(self.useNormalize):
+            outputs = transforms.Compose([
+                transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
+                    FontGeneratorDataset.IMAGE_VAR)])(outputs)
+            
 
         ans = [0] * self.MAIN_LOSS_N
         ans[0] = self.mainLoss[0](outputs, targets)
