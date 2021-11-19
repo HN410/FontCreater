@@ -10,6 +10,20 @@ from EfficientNet.model import *
 from StyleGAN.network import *
 
 
+# 画像を入力とし，それが何の文字かを判別する
+# cycleGANを作るために実装
+class CharaDiscriminator(nn.Module):
+    def __init__(self, ver = 3):
+        super().__init__()
+        blocks_args, global_params = get_model_params('efficientnet-b0', {})
+        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
+        load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
+                                load_fc=(ver < 2), advprop=False)
+        self.chara_encoder._change_in_channels(1)
+    def forward(self, images):
+        # teacherとなるmyPSPのself.chara_encoderの出力は
+        # ほぼ正規化されている(mean ~ 0.075, var ~ 1.1)ので，正規化しなくてよい?
+        return self.chara_encoder(images)
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
@@ -45,7 +59,7 @@ class MyPSP(nn.Module):
         # chara_image ... 変換したい文字のMSゴシック体の画像
         #   [B, 1, 256, 256]
         # style_pairs ... MSゴシック体の文字と、その文字に対応する変換先のフォントの文字の画像のペアのテンソル
-        #   [B, pair_n, 2, 1, 256, 256]
+        #   [B, pair_n, 2, 1, 256, 256]　→　 ver=4, [B, pair_n, 1, 256, 256] MSゴシック体をなくす
         # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
 
         # 文字をエンコード [B, 256*6, 1, 1](ver1) or [B, 320, 8, 8](ver2)
@@ -53,13 +67,14 @@ class MyPSP(nn.Module):
 
         if self.for_chara_training:
             if self.ver >= 3:
-                return self.style_gen(chara_images, None, alpha)
+                return chara_images, self.style_gen(chara_images, None, alpha)
             else:
-                return torch.sigmoid(self.style_gen(chara_images, None, alpha))
+                return chara_images, torch.sigmoid(self.style_gen(chara_images, None, alpha))
         
         pair_n = style_pairs.size()[1]
         # ペアの差分をとる [B, pair_n, 1, 256, 256]
-        style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
+        if(self.ver <= 3):
+            style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
         style_pairs = [self.style_encoder(style_pairs[:, i]) for i in range(pair_n)]
 
@@ -68,7 +83,7 @@ class MyPSP(nn.Module):
 
         res =  self.style_gen(chara_images, style_pairs, alpha)
 
-        return torch.sigmoid(res)
+        return chara_images, torch.sigmoid(res)
 
 class SoftCrossEntropy(nn.Module):
     eps = 1e-4
