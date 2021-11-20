@@ -23,7 +23,7 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes,  teachers, alpha,
 
     batch_size = fakes.size()[0]
 
-    loss_wd =  torch.nn.LeakyReLU(0.002)(1- d_trues).mean() - torch.nn.LeakyReLU(0.002)(1+d_fakes).mean()
+    loss_wd =  torch.nn.LeakyReLU(0.002)(1- d_trues).mean() + torch.nn.LeakyReLU(0.002)(1+d_fakes).mean()
 
     # gradient penalty
     loss_gp = 0
