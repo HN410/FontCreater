@@ -101,8 +101,8 @@ class MyPSPLoss(nn.Module):
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
     # onSharpはImageSharpLossにかける係数
 
-    MAIN_LOSS_N = 3
-    SCALE = 4
+    MAIN_LOSS_N = 4
+    SCALE = 2
 
     # mode = mse, l1, crossE
     def __init__(self, mode = "mse", onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
@@ -156,7 +156,7 @@ class MyPSPLoss(nn.Module):
         ans = [0] * self.MAIN_LOSS_N
         ans[0] = self.mainLoss[0](outputs, targets)
         # SCALE分の1した画像でも同様に二乗誤差をとってみる
-        factor = 1
+        factor = 4
         for i in range(self.MAIN_LOSS_N-1):
             factor *= self.SCALE ** 2
             outputs = F.interpolate(outputs, scale_factor=1/self.SCALE, mode="bilinear")

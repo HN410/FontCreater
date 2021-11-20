@@ -39,7 +39,7 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, trues, fakes,  teachers, alpha,
     # drift
     loss_drift = epsilon_drift * (d_trues ** 2).mean()
 
-    loss = -loss_wd + loss_gp + loss_drift
+    loss = loss_wd + loss_gp + loss_drift
 
     wd = loss_wd.item()
 
