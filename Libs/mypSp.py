@@ -94,20 +94,25 @@ class SoftCrossEntropy(nn.Module):
     def forward(self, out, teacher):
         teacher = teacher * self.std + self.mean
         out = teacher * torch.log(out + self.eps) + (1-teacher) * torch.log(1-out + self.eps)
-        return out.mean()
+        # if(torch.any(torch.isnan(out))):
+        #     print("NAN")
+        return -1 * out.mean()
 
 class MyPSPLoss(nn.Module):
     # MyPSP用の損失関数
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
     # onSharpはImageSharpLossにかける係数
 
-    MAIN_LOSS_N = 4
+    MAIN_LOSS_N = 3
     SCALE = 2
+    START_SCALE = 8
+    FACTOR = 2
 
     # mode = mse, l1, crossE
     def __init__(self, mode = "mse", onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
         super().__init__()
         self.useNormalize = True
+        self.mode = mode
         if(mode == "l1"):
             self.mainLoss = nn.ModuleList([nn.L1Loss() for i in range(self.MAIN_LOSS_N)])    
         elif(mode == "crossE"):
@@ -146,19 +151,25 @@ class MyPSPLoss(nn.Module):
         if(self.hingeLoss is not None):
             hingeLoss = self.hingeLoss(outputs, targets)
 
-        # outputsは正規化されていないので、正規化する
+        # outputsは正規化されていないので、それに合わせる
         if(self.useNormalize):
             outputs = transforms.Compose([
                 transforms.Normalize(FontGeneratorDataset.IMAGE_MEAN, 
                     FontGeneratorDataset.IMAGE_VAR)])(outputs)
+        if(self.mode == "crossE"):
+            targets = (targets * FontGeneratorDataset.IMAGE_VAR) + FontGeneratorDataset.IMAGE_MEAN
             
 
         ans = [0] * self.MAIN_LOSS_N
-        ans[0] = self.mainLoss[0](outputs, targets)
-        # SCALE分の1した画像でも同様に二乗誤差をとってみる
-        factor = 4
+
+        # 1/8スタートで各SCALEでSCALE分の1してさらに誤差を計算
+        factor = 1
+        outputs = F.interpolate(outputs, scale_factor=1/self.START_SCALE, mode="bilinear")
+        targets = F.interpolate(targets, scale_factor=1/self.START_SCALE, mode="bilinear")
+        ans[0] = self.mainLoss[0](outputs, targets) * factor
+        
         for i in range(self.MAIN_LOSS_N-1):
-            factor *= self.SCALE ** 2
+            factor *= self.FACTOR
             outputs = F.interpolate(outputs, scale_factor=1/self.SCALE, mode="bilinear")
             targets = F.interpolate(targets, scale_factor=1/self.SCALE, mode="bilinear")
             ans[i+1] = self.mainLoss[i+1](outputs, targets) * factor

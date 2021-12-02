@@ -19,7 +19,7 @@ def g_lsgan_loss(discriminator, fakes, labels, alpha):
 
 def d_wgan_loss(discriminator, d_trues, d_fakes, before,  trues, fakes,  teachers, alpha, phase, useGradient = True):
     epsilon_drift = 1e-3
-    lambda_gp = 10
+    lambda_gp = 1 # 10
 
     batch_size = fakes.size()[0]
 
@@ -48,7 +48,7 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, before,  trues, fakes,  teacher
 
 def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase, useGradient = True):
     epsilon_drift = 1e-3
-    lambda_gp = 10
+    lambda_gp = 1 # 10
     loss_list = []
 
     batch_size = fakes.size()[0]
@@ -56,13 +56,15 @@ def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase,
     d_trues = discriminator(before, trues, teachers, alpha)
     d_fakes = discriminator(before, fakes, teachers, alpha)
 
-    loss_wd =  torch.nn.LeakyReLU(0.002)(1- d_trues).mean() +\
-         torch.nn.LeakyReLU(0.002)(1 + d_fakes).mean()
-    correctN = (d_trues > 0).sum().item() + (d_fakes <= 0).sum().item()
+    loss_wd =  (torch.nn.LeakyReLU(0.002)(1- d_trues)).mean() +\
+         (torch.nn.LeakyReLU(0.002)(1 + d_fakes)).mean()
+    TCorrectN = (d_trues > 0).sum().item()
+    FCorrectN =  (d_fakes <= 0).sum().item()
+    correctN = TCorrectN + FCorrectN
     loss_list.append(loss_wd.item())
 
     # drift
-    loss_wd += epsilon_drift * (d_trues ** 2).mean()
+    # loss_wd += epsilon_drift * (d_trues ** 2).mean()
     # loss_wd += epsilon_drift * (d_fakes ** 2).mean() # 不安定なため追加
 
     del d_fakes, d_trues
@@ -89,7 +91,7 @@ def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase,
     
     # wd = loss_wd.item()
 
-    return loss, correctN, np.array(loss_list)
+    return loss, correctN, np.array(loss_list), TCorrectN, FCorrectN
 
 
 

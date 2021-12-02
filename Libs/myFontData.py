@@ -229,7 +229,7 @@ class MyPSPAugmentation:
                 img = 1-img
             if(useNoise):
                 size = img.size()
-                new  = img+ 20*cls.NOISE_STRENGTH* torch.randn(size).to(device)
+                new  = img+ 20*cls.NOISE_STRENGTH* torch.randn(size, device=device)
                 return new
             return img
         return transforms.Lambda(transpose)
