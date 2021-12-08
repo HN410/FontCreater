@@ -591,7 +591,7 @@ class Generator(nn.Module):
             fakes = self.synthesis_module(chara_z, z, alpha)
             
 
-        return torch.nn.Sigmoid()(fakes)
+        return fakes
 
     def write_histogram(self, writer, step):
         # for name, param in self.latent_transform.named_parameters():
@@ -719,9 +719,9 @@ class Discriminator3(nn.Module):
         self.discriminator._change_in_channels(1)
 
         self.linears = nn.ModuleList(
-            list(itertools.chain.from_iterable([[nn.Dropout(dropout_p),  nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1])]
-                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]))
-        )
+            [nn.Dropout(dropout_p)] + [ nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1])
+                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)])
+        
         self.activation = nn.LeakyReLU(0.2)
     
     # def set_level(self, level):

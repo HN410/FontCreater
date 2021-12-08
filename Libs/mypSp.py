@@ -83,7 +83,7 @@ class MyPSP(nn.Module):
 
         res =  self.style_gen(chara_images, style_pairs, alpha)
 
-        return chara_images, torch.sigmoid(res)
+        return chara_images, res
 
 class SoftCrossEntropy(nn.Module):
     eps = 1e-4

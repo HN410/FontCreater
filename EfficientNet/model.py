@@ -650,7 +650,6 @@ class EfficientNetDiscriminator(nn.Module):
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
         self._blocks_args = blocks_args
-        self.dropout = nn.Dropout2d(p = dropout_p)
 
         # Batch norm parameters
         bn_mom = 1 - self._global_params.batch_norm_momentum
@@ -687,6 +686,7 @@ class EfficientNetDiscriminator(nn.Module):
             for _ in range(block_args.num_repeat - 1):
                 self._blocks.append(MBConvBlock(block_args, self._global_params, image_size=image_size))
                 # image_size = calculate_output_image_size(image_size, block_args.stride)  # stride = 1
+        self.dropouts = nn.ModuleList([torch.nn.Dropout2d(p = dropout_p) for i in range(len(self._blocks))])
 
         # Head
         in_channels = block_args.output_filters  # output of final block
@@ -783,7 +783,7 @@ class EfficientNetDiscriminator(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
             x = block(x, drop_connect_rate=drop_connect_rate)
-            x = self.dropout(x)
+            x = self.dropouts[idx](x)
 
         # Head
         x = self._swish(self._conv_head(x))
