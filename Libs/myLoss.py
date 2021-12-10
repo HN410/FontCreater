@@ -46,16 +46,19 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, before,  trues, fakes,  teacher
 
     return loss, wd
 
-def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase, useGradient = True):
+def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase, useGradient = True, useBefore = True):
     epsilon_drift = 1e-3
     lambda_gp = 1e-2 # 10
     loss_list = []
 
     batch_size = fakes.size()[0]
 
-    d_trues = discriminator(before, trues, teachers, alpha)
-    d_fakes = discriminator(before, fakes, teachers, alpha)
-
+    if(useBefore):
+        d_trues = discriminator(before, trues, teachers, alpha)
+        d_fakes = discriminator(before, fakes, teachers, alpha)
+    else:
+        d_trues = discriminator(trues, teachers, alpha)
+        d_fakes = discriminator(fakes, teachers, alpha)
     loss_wd =  (torch.nn.LeakyReLU(0.002)(1- d_trues)).mean() +\
          (torch.nn.LeakyReLU(0.002)(1 + d_fakes)).mean()
     TCorrectN = (d_trues > 0).sum().item()
@@ -76,7 +79,10 @@ def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase,
         epsilon = torch.rand(batch_size, 1, 1, 1, dtype=fakes.dtype, device=fakes.device)
         intpl = epsilon * fakes + (1 - epsilon) * trues
         intpl.requires_grad_()
-        f = discriminator.forward(before, intpl, teachers,  alpha)
+        if(useBefore):
+            f = discriminator.forward(before, intpl, teachers,  alpha)
+        else:
+            f = discriminator.forward(intpl, teachers,  alpha)
         grad = torch.autograd.grad(f.sum(), intpl, create_graph=True)[0]
         del intpl, epsilon, f
         grad_norm = grad.view(batch_size, -1).norm(dim=1)
