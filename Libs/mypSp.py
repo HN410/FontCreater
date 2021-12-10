@@ -27,7 +27,7 @@ class CharaDiscriminator(nn.Module):
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
-    def __init__(self, ver = 1, dropout_p = 0):
+    def __init__(self, ver = 1, dropout_p = 0, useBNform2s = False, useBin = False):
         # chara_encoder ... どの文字かをエンコード
         # style_encoder ... 複数のフォントの組からスタイル情報をエンコード
         # style_gen ... エンコーダから得られた情報をもとにフォントを構成
@@ -35,7 +35,7 @@ class MyPSP(nn.Module):
         self.z_dim = 256 # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
-        self.style_encoder = EfficientNetEncoder(blocks_args, global_params, ver = ver)
+        self.style_encoder = EfficientNetEncoder(blocks_args, global_params, ver = ver, useBNform2s = useBNform2s)
         load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
         load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
@@ -46,6 +46,8 @@ class MyPSP(nn.Module):
         self.style_gen = Generator(gen_settings["network"], ver=ver, dropout_p=dropout_p)
         self.for_chara_training = False
         self.ver = ver
+        self.useBin = useBin
+        self.Bin =BinarizationWithDerivative.apply
     
     def set_level(self, level):
         self.style_gen.set_level(level)
@@ -76,14 +78,16 @@ class MyPSP(nn.Module):
         if(self.ver <= 3):
             style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
-        style_pairs = [self.style_encoder(style_pairs[:, i]) for i in range(pair_n)]
+        style_pairs = torch.stack([self.style_encoder(style_pairs[:, i]) for i in range(pair_n)])
 
-        style_pairs = torch.stack(style_pairs).mean(0)
+        style_pairs_ = style_pairs.mean(0)
 
 
-        res =  self.style_gen(chara_images, style_pairs, alpha)
+        res =  self.style_gen(chara_images, style_pairs_, alpha)
+        if(self.useBin):
+            res = self.Bin(res)
 
-        return chara_images, res
+        return chara_images, style_pairs, res
 
 class SoftCrossEntropy(nn.Module):
     eps = 1e-4
@@ -103,10 +107,10 @@ class MyPSPLoss(nn.Module):
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
     # onSharpはImageSharpLossにかける係数
 
-    MAIN_LOSS_N = 3
+    MAIN_LOSS_N = 4
     SCALE = 2
-    START_SCALE = 8
-    FACTOR = 2
+    START_SCALE = 4
+    FACTOR = 1
 
     # mode = mse, l1, crossE
     def __init__(self, mode = "mse", onSharp = 0, rareP = 0, separateN = 1, hingeLoss = 0):
@@ -254,3 +258,51 @@ class ImageRarePixelLoss(nn.Module):
             ans = ans.mean()
 
             return ans
+
+# 微分が伝わる二値化
+# 出力で微分が大きいところは減らしたい，つまり1よりも0のほうが好ましい，微分が小さいところはその逆という仮定に基づく
+# 二値化の代わりにヒンジのLeakyReLUを使った場合と似た挙動をする
+class BinarizationWithDerivative(torch.autograd.Function):
+    LEAKY_RELU_A = 0.002
+    FACTOR = 10
+    @staticmethod
+    def forward(ctx, x):
+        ans = (x > 0) +0.
+        ctx.save_for_backward(x, ans)
+        return ans
+    
+    @staticmethod
+    def backward(ctx, dLdy):
+        x, y = ctx.saved_tensors
+
+        dLB = (dLdy > 0) + 0. # 微分が大きかった
+        dLS = 1-dLB # 微分が小さい
+
+        reduce = dLB * y + dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
+        same = dLB * (1-y) - dLS * y # あっているところは少しだけよりその方向に向かうように
+
+        return (reduce  + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
+        # return (reduce * x + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
+
+
+# style encoderから出力される値で損失をとる
+# feature ... [teacher_n, B, 256*2, 1, 1]
+STYLE_LOSS_SAME_FACTOR = 1
+def styleLoss(feature):
+    teacher_n = feature.size()[0]
+    Bn = feature.size()[1]
+    loss = 0
+    if(teacher_n > 1):
+        # 同じフォントは同じ値が出るように
+        sep = (teacher_n+ 1) // 2
+        feature0 = feature[0:sep+1].mean(0)
+        feature1 = feature[sep:teacher_n].mean(0)
+        loss = loss + STYLE_LOSS_SAME_FACTOR * torch.nn.MSELoss()(feature0, feature1)
+        del feature0, feature1
+    if( feature.size()[1] > 1):
+        # 違うフォントからは違う値が出るように
+        # あまり遠い値が出ないように-log(sum(|f-t|))とする
+        feature = feature.mean(0)
+        loss  = loss - torch.log(torch.nn.L1Loss()(feature, feature[list(range(Bn))[::-1]]))
+    return loss
+

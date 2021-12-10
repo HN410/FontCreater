@@ -747,10 +747,12 @@ class Discriminator3(nn.Module):
         # [B, 2 * DISCRIMINATOR_LINEAR_NS[0]]
         after = torch.cat([after, teachers], 1)
 
+
         # この２つをまとめて全結合層へ
-        for linear in self.linears:
+        for i, linear in enumerate(self.linears):
             after = linear(after)
-            after = self.activation(after)
+            if(i != len(self.linears)-1):
+                after = self.activation(after)
 
         #  [B, 1]
 
