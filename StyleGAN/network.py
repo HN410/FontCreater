@@ -769,9 +769,8 @@ class Discriminator4(nn.Module):
         self.discriminator._change_in_channels(1)
 
         self.linears = nn.ModuleList(
-            list(itertools.chain.from_iterable([[nn.Dropout(dropout_p),  nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1])]
-                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)]))
-        )
+            [nn.Dropout(dropout_p)] + [ nn.Linear(DISCRIMINATOR_LINEAR_NS[i], DISCRIMINATOR_LINEAR_NS[i+1])
+                    for i in range(len(DISCRIMINATOR_LINEAR_NS)-1)])
         self.activation = nn.LeakyReLU(0.2)
     
     # def set_level(self, level):
@@ -796,9 +795,10 @@ class Discriminator4(nn.Module):
         after = torch.cat([after, teachers], 1)
 
         # この２つをまとめて全結合層へ
-        for linear in self.linears:
+        for i, linear in enumerate(self.linears):
             after = linear(after)
-            after = self.activation(after)
+            if(i != len(self.linears)-1):
+                after = self.activation(after)
 
         #  [B, 1]
 
