@@ -8,15 +8,17 @@ class Map2Style(nn.Module):
     CHARACTER_OUTC = [[256, 512, 512], [256, 512, 1024]] # 文字用の各畳み込み層のチャンネル出力数
 
     # idxは特徴マップのサイズが8, 16, 32, 64のうちどれかに対応
-    def __init__(self, idx, channelN):
+    def __init__(self, idx, channelN, useBN = False):
         super(Map2Style, self).__init__()
         assert 0 <= idx < Map2Style.MAX_IDX
-        self.__setConvs__(idx, channelN)
+        self.__setConvs__(idx, channelN, useBN)
         self.activation = nn.LeakyReLU(negative_slope=0.2)
+        self.useBN = useBN
     
-    def __setConvs__(self, idx, inChannel):
+    def __setConvs__(self, idx, inChannel, useBN):
         # idx >= 2　かどうかで文字用かスタイル用か区別
         self.convs = []
+        self.BNs = []
         outC = Map2Style.FINAL_CHANNEL_N
         for i, scale in enumerate(Map2Style.SCALE_LIST[idx]):
             inC = outC
@@ -31,10 +33,18 @@ class Map2Style(nn.Module):
             convParams = Map2Style.CONV_PARAMS[scale]
             conv = nn.Conv2d(inC, outC, convParams[1],  convParams[2], convParams[0])
             self.convs.append(conv)
+
+            # BNを挟む
+            if(useBN):
+                self.BNs.append(nn.BatchNorm2d(outC))
         self.convs = nn.ModuleList(self.convs)
+        if(useBN):
+            self.BNs = nn.ModuleList(self.BNs)
     
     def forward(self, input):
-        for conv in self.convs:
+        for i, conv in enumerate(self.convs):
             input = conv(input)
+            if(self.useBN):
+                input = self.BNs[i](input)
             input = self.activation(input)
         return input
