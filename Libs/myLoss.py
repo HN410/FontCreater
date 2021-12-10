@@ -48,7 +48,7 @@ def d_wgan_loss(discriminator, d_trues, d_fakes, before,  trues, fakes,  teacher
 
 def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase, useGradient = True):
     epsilon_drift = 1e-3
-    lambda_gp = 1 # 10
+    lambda_gp = 1e-2 # 10
     loss_list = []
 
     batch_size = fakes.size()[0]

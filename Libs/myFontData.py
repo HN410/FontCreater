@@ -190,7 +190,7 @@ class MyPSPAugmentation:
     TRANSLATE_LIMIT = 5
     SCALE_LIMIT = 0.1
     PERSPECTIVE_LIMIT = 0.1
-    NOISE_STRENGTH = 0.003
+    NOISE_STRENGTH = 0.001
 
     @classmethod
     def getTransform(cls, imageWH, probs, device = "cpu"):

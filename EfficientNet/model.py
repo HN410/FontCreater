@@ -178,7 +178,7 @@ class EfficientNetEncoder(nn.Module):
     SAVED_FEATUREMAPS_IDX = [2, 4, 10] # encode時に用いる特徴マップのインデックス
     ENCODE_MAP_CHANNELS = [320, 112, 40, 24] # エンコードして出力するときのチャンネル数
 
-    def __init__(self, blocks_args=None, global_params=None, isForCharacter = False, ver=1):
+    def __init__(self, blocks_args=None, global_params=None, isForCharacter = False, ver=1, useBNform2s = False):
         # isForCharacter ... 文字エンコード用ならTrue, スタイルエンコード用ならFalse
         # ver ... version指定。1は文字のエンコード情報もadaInの入力。2はefficientNetの特徴量マップをそのままStyleGenの特徴量マップとして使う
         #     ...3 spectral normalization を使用 
@@ -284,7 +284,7 @@ class EfficientNetEncoder(nn.Module):
         if(not isForCharacter):
             indPlus = 2
         self.map2styles = nn.ModuleList(
-            [Map2Style(i+indPlus, map_channels[i+indPlus]) for i in range(map2style_n)])
+            [Map2Style(i+indPlus, map_channels[i+indPlus], useBNform2s) for i in range(map2style_n)])
 
 
 
@@ -381,7 +381,7 @@ class EfficientNetEncoder(nn.Module):
             x = F.interpolate(x, scale_factor=2, mode="bilinear")
             x = self.encode_convs[idx](x)
             x = self.encode_conv_activation(x)
-            x += map
+            x = x + map
             if(self.isForCharacter):
                 ans.append(self.map2styles[idx+1](x))
             elif(idx != 0):
