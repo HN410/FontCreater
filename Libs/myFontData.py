@@ -262,6 +262,7 @@ class MyPSPAugmentation:
 
         return ans
         
+# augmentation で，入力されるimgはshapeが[1, 1, 356, 256] だったり，[1, 256, 256]だったりするので注意
 class ConvAugmentation:
     Laplacian = torch.tensor([[[[1., 1., 1.], [1., -8., 1.], [1., 1., 1.]]]])
     # Sobel = torch.tensor([[[[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]]])
@@ -331,10 +332,12 @@ class DistortingAugmentation:
         l2 = MaxL * random.random()
         trans = random.random() > 0.5
         def f(img):
+            shape = img.shape
             c1 = size * random.random()
             c2 = size * random.random()
 
             waveF = cls.getWaveF(k1, k2, c1, c2, l1, l2)
+            img = img.reshape((size, size))
             padded = F.pad(img, (padN, padN, padN, padN), value = 1.0)
 
             if(trans):
@@ -342,7 +345,7 @@ class DistortingAugmentation:
             img = torch.stack([padded[i][padN + int(waveF(i)) : padN + int(waveF(i)) + size] for i in range(padN, padN + size)])
             if(trans):
                 img = img.T
-            return img
+            return img.reshape(shape)
         return transforms.Lambda(f)
     
 
