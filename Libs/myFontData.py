@@ -87,7 +87,6 @@ class FontGeneratorDataset(data.Dataset):
             if(aug):
                 beforeNormalize.append(aug)
             beforeNormalize = transforms.Compose(beforeNormalize)
-            print(beforeNormalize)
 
         else:
             if(beforeNormalize is not None):
@@ -311,7 +310,41 @@ class PatteringAugmentation:
         def getLinedImg(img):
             return 10 * lineImg + img
         return getLinedImg
-        
+
+# 画像をゆがめるタイプ    
+class DistortingAugmentation:
+    @staticmethod    
+    def getWaveF(k1, k2, c1, c2, l1, l2):
+        def f(x):
+            w1 = l1 * np.sin(k1 * x + c1)
+            w2 = l2 * np.sin(k2 * x + c2)
+            return w1 + w2
+        return f
+    
+    @classmethod
+    def getWaving(cls, size):
+        MaxL = size / 50
+        padN = int(MaxL)*2 + 1
+        k1 = np.pi*(1 + random.random() * 15) / size
+        k2 = np.pi*(1 + random.random() * 15) / size
+        l1 = MaxL * random.random()
+        l2 = MaxL * random.random()
+        trans = random.random() > 0.5
+        def f(img):
+            c1 = size * random.random()
+            c2 = size * random.random()
+
+            waveF = cls.getWaveF(k1, k2, c1, c2, l1, l2)
+            padded = F.pad(img, (padN, padN, padN, padN), value = 1.0)
+
+            if(trans):
+                padded = padded.T
+            img = torch.stack([padded[i][padN + int(waveF(i)) : padN + int(waveF(i)) + size] for i in range(padN, padN + size)])
+            if(trans):
+                img = img.T
+            return img
+        return transforms.Lambda(f)
+    
 
 class OriginalAugSet:
     @classmethod
@@ -343,7 +376,7 @@ class OriginalAugSet:
     
     # すべてを組み合わせたtransformを返す
     # pList ... それぞれが適用される確率
-    # [ラプラス, expand or contract, line]
+    # [ラプラス, expand or contract, line, wave]
     @classmethod
     def getAll(cls, pList, size = 256, device = "cpu"):
         ans = []
@@ -357,6 +390,9 @@ class OriginalAugSet:
                 ans.append(cls.getExpand(random.randint(1, 3)))
         if(pList[2] > random.random()):
             ans.append(PatteringAugmentation.getLinePaint(size, device))
+        
+        if(pList[3] > random.random()):
+            ans.append(DistortingAugmentation.getWaving(size))
         
         if(ans !=  []):
             ans.append(cls.getBinarization())
