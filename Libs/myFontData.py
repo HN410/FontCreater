@@ -80,7 +80,9 @@ class FontGeneratorDataset(data.Dataset):
             beforeNormalize = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
         if(self.originalAugmentationP):
             beforeNormalize = [beforeNormalize]
-            beforeNormalize.append(OriginalAugSet.getAll(self.augmentationP))
+            aug = OriginalAugSet.getAll(self.augmentationP)
+            if(aug):
+                beforeNormalize.append(aug)
             beforeNormalize = transforms.Compose(beforeNormalize)
             
         else:
@@ -351,7 +353,9 @@ class OriginalAugSet:
         
         if(ans !=  []):
             ans.append(cls.getBinarization())
-        return transforms.Compose(ans)
+            return transforms.Compose(ans)
+        else:
+            return None
 
     
         
