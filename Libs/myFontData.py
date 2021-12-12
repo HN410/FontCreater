@@ -4,6 +4,9 @@ from torchvision.transforms.transforms import Grayscale
 from .myFontLib import *
 import torch.utils.data as data
 from torchvision.transforms import functional as tvf
+import numpy as np
+import torch.nn.functional as F
+import cv2
 
 class FontGeneratorDataset(data.Dataset):
     # ゴシック体と各フォントのペア画像の組を出力するデータセット
@@ -18,7 +21,7 @@ class FontGeneratorDataset(data.Dataset):
     IMAGE_WH = 256
 
     def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list,\
-         useTensor=True, startInd = 0, indN = None, isForValid = None, augmentationP = None):
+         useTensor=True, startInd = 0, indN = None, isForValid = None, augmentationP = None, originalAugmentationP = None,):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
         #  imageN ... ペア画像を出力する数の範囲(要素は２つ)
@@ -51,6 +54,7 @@ class FontGeneratorDataset(data.Dataset):
             self.isForValid = False
         
         self.augmentationP = augmentationP
+        self.originalAugmentationP = originalAugmentationP
         
 
     def __len__(self):
@@ -74,6 +78,12 @@ class FontGeneratorDataset(data.Dataset):
         if(self.augmentationP is not  None):
 
             beforeNormalize = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
+        if(self.originalAugmentationP):
+            beforeNormalize = [beforeNormalize]
+            beforeNormalize.append(OriginalAugSet.getAll(self.augmentationP))
+            beforeNormalize = transforms.Compose(beforeNormalize)
+            
+        else:
             if(beforeNormalize is not None):
                 beforeNormalize = transforms.Compose([beforeNormalize])
 
@@ -247,5 +257,101 @@ class MyPSPAugmentation:
 
         return ans
         
+class ConvAugmentation:
+    Laplacian = torch.tensor([[[[-1., -1., -1.], [-1., 8., -1.], [-1., -1., -1.]]]])
+    # Sobel = torch.tensor([[[[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]]])
+    @classmethod
+    def getTransformWithKernel(cls, kernel, device):
+        kernel = kernel.to(device)
+        def transform(img):
+            return F.conv2d(img, kernel, padding = "same")
+        return transforms.Lambda(transform)
+    
+    @classmethod
+    def getTransformRandom(cls, device):
+        return cls.getTransformWithKernel(cls.Laplacian,device)
+        # if(random.random() < 0.5):
+        # else:
+        #     return cls.getTransformWithKernel(cls.Sobel,device)
+#模様をつける
+class PatteringAugmentation:
+    #線の模様用のnumpy array 
+    # size = 画像の幅
+    # lineNumRange = 線の本数の範囲
+    # lineWidthRange = 線の太さの範囲
+    @classmethod
+    def getLineArray(cls, size, lineNumRange = [8, 40], lineWidthRange = [2,4]):
 
+        img = np.zeros((size, size))
+        lineLength = 1.5 * size / 2 # 直線の長さの1/2
+        center = np.array([size / 2, size / 2])
+        theta = np.pi *  random.random() 
+        startBase = center + lineLength * np.array([-1 * np.sin(theta),  np.cos(theta)])
+        endBase = center - lineLength * np.array([-1 * np.sin(theta), np.cos(theta)])
+        moveBase = 2 * np.array([lineLength * np.cos(theta), lineLength * np.sin(theta)])
+        for i in range(random.randint(lineNumRange[0], lineNumRange[1])):
+            move = moveBase * (random.random() - 0.5)
+            start = move + startBase 
+            end   = move + endBase
+            cv2.line(img, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (1, 1 , 1),
+                thickness = random.randint(lineWidthRange[0], lineWidthRange[1]))
+        return img
+    
+    @classmethod
+    def getLinePaint(cls, w, device = "cpu"):
+        lineImg = cls.getLineArray(w).reshape((1,1, w, w))
+        lineImg = torch.tensor(lineImg, device = device)
+        def getLinedImg(img):
+            return 10 * lineImg + img
+        return getLinedImg
+        
+
+class OriginalAugSet:
+    @classmethod
+    def getBinarization(cls,val = 0.):
+        def bin(img):
+            return (img > val) + 0.
+        return bin
+    
+
+    # モルフォロジー変換で収縮(フォントは文字部分が0)
+    # @classmethod
+    # def contract(cls,  img, size = 1):
+        
+    @classmethod 
+    def getContract(cls, size):
+        def contract(img):
+            kernelsize = (size * 2 + 1)
+            return torch.nn.functional.max_pool2d(img, (kernelsize, kernelsize), stride = 1 , padding = size)
+        return transforms.Lambda(contract)
+
+    @classmethod 
+    def getExpand(cls, size):
+        def expand(img):
+            kernelsize = (size * 2 + 1)
+            return -1 * torch.nn.functional.max_pool2d(-1 * img, (kernelsize, kernelsize), stride = 1 , padding = size)
+        return transforms.Lambda(expand)
+    
+    # すべてを組み合わせたtransformを返す
+    # pList ... それぞれが適用される確率
+    # [ラプラス, expand or contract, line]
+    @classmethod
+    def getAll(cls, pList, size = 256, device = "cpu"):
+        ans = []
+        useLaplace = pList[0] > random.random()
+        if(useLaplace):
+            ans.append(ConvAugmentation.getTransformRandom(device))
+        if(pList[1] > random.random()):
+            if(0.5 >random.random() and (not useLaplace)):
+                ans.append(cls.getContract(1))
+            else:
+                ans.append(cls.getExpand(random.randint(1, 3)))
+        if(pList[2] > random.random()):
+            ans.append(PatteringAugmentation.getLinePaint(size, device))
+        
+        if(ans !=  []):
+            ans.append(cls.getBinarization())
+        return transforms.Compose(ans)
+
+    
         
