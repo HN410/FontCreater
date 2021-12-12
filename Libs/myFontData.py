@@ -303,14 +303,45 @@ class PatteringAugmentation:
             cv2.line(img, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (1, 1 , 1),
                 thickness = random.randint(lineWidthRange[0], lineWidthRange[1]))
         return img
+
+    @classmethod
+    def getCircleArray(cls, size, circleNumRange = [5, 60], radiusRange = [2, 7]):
+        img = np.zeros((size, size))
+
+        for i in range(random.randint(circleNumRange[0], circleNumRange[1])):
+            (x, y) = (random.randint(0, size), random.randint(0, size))
+            r = random.randint(radiusRange[0],radiusRange[1])
+            cv2.circle(img, (x, y),r, (1, 1, 1), thickness = -1)
+        return img
     
     @classmethod
-    def getLinePaint(cls, w, device = "cpu"):
-        lineImg = cls.getLineArray(w).reshape((1, w, w))
-        lineImg = torch.tensor(lineImg, device = device)
-        def getLinedImg(img):
-            return 10 * lineImg + img
-        return getLinedImg
+    def getNoiseArray(cls, size, strengthRange = [0.6, 2]):
+        img = np.abs(np.random.randn(size, size))
+        img =  (img > random.uniform(strengthRange[0], strengthRange[1])) + 0.0
+        return img
+
+    # @classmethod
+    # def getLinePaint(cls, w, device = "cpu"):
+    #     lineImg = cls.getLineArray(w).reshape((1, w, w))
+    #     lineImg = torch.tensor(lineImg, device = device)
+    #     def getLinedImg(img):
+    #         return 10 * lineImg + img
+    #     return getLinedImg
+    
+    @classmethod
+    def getPaintAugmentation(cls, w, mode, device = "cpu"):
+        if(mode == "line"):
+            patternImg = cls.getLineArray(w).reshape((1, w, w))
+        elif(mode == "circle"):
+            patternImg = cls.getCircleArray(w).reshape((1, w, w))
+        elif(mode == "noise"):
+            patternImg = cls.getNoiseArray(w).reshape((1, w, w))
+        else:
+            raise NotImplementedError
+        patternImg = torch.tensor(patternImg, device = device)
+        def getImg(img):
+            return 10 * patternImg + img
+        return getImg
 
 # 画像をゆがめるタイプ    
 class DistortingAugmentation:
@@ -379,7 +410,7 @@ class OriginalAugSet:
     
     # すべてを組み合わせたtransformを返す
     # pList ... それぞれが適用される確率
-    # [ラプラス, expand or contract, line, wave]
+    # [ラプラス, expand or contract, line, circle, noise, wave]
     @classmethod
     def getAll(cls, pList, size = 256, device = "cpu"):
         ans = []
@@ -392,11 +423,14 @@ class OriginalAugSet:
             else:
                 ans.append(cls.getExpand(random.randint(1, 3)))
         if(pList[2] > random.random()):
-            ans.append(PatteringAugmentation.getLinePaint(size, device))
-        
-        if(pList[3] > random.random()):
+            ans.append(PatteringAugmentation.getPaintAugmentation(size, "line", device))
+        if(pList[3] > random.random() and (not useLaplace)):
+            ans.append(PatteringAugmentation.getPaintAugmentation(size, "circle", device))
+        if(pList[4] > random.random() and (not useLaplace)):
+            ans.append(PatteringAugmentation.getPaintAugmentation(size, "noise", device))
+        if(pList[5] > random.random()):
             ans.append(DistortingAugmentation.getWaving(size))
-        
+
         if(ans !=  []):
             ans.append(cls.getBinarization())
             return transforms.Compose(ans)
