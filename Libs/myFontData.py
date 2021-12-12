@@ -79,12 +79,16 @@ class FontGeneratorDataset(data.Dataset):
 
             beforeNormalize = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
         if(self.originalAugmentationP):
-            beforeNormalize = [beforeNormalize]
-            aug = OriginalAugSet.getAll(self.augmentationP)
+            if(beforeNormalize):
+                beforeNormalize = [beforeNormalize]
+            else:
+                beforeNormalize =[]
+            aug = OriginalAugSet.getAll(self.originalAugmentationP)
             if(aug):
                 beforeNormalize.append(aug)
             beforeNormalize = transforms.Compose(beforeNormalize)
-            
+            print(beforeNormalize)
+
         else:
             if(beforeNormalize is not None):
                 beforeNormalize = transforms.Compose([beforeNormalize])
@@ -260,13 +264,14 @@ class MyPSPAugmentation:
         return ans
         
 class ConvAugmentation:
-    Laplacian = torch.tensor([[[[-1., -1., -1.], [-1., 8., -1.], [-1., -1., -1.]]]])
+    Laplacian = torch.tensor([[[[1., 1., 1.], [1., -8., 1.], [1., 1., 1.]]]])
     # Sobel = torch.tensor([[[[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]]])
     @classmethod
     def getTransformWithKernel(cls, kernel, device):
         kernel = kernel.to(device)
         def transform(img):
-            return F.conv2d(img, kernel, padding = "same")
+            img = 1-img.unsqueeze(0)
+            return  0.1 +  F.conv2d(img, kernel, padding = "same")[0]
         return transforms.Lambda(transform)
     
     @classmethod
@@ -301,7 +306,7 @@ class PatteringAugmentation:
     
     @classmethod
     def getLinePaint(cls, w, device = "cpu"):
-        lineImg = cls.getLineArray(w).reshape((1,1, w, w))
+        lineImg = cls.getLineArray(w).reshape((1, w, w))
         lineImg = torch.tensor(lineImg, device = device)
         def getLinedImg(img):
             return 10 * lineImg + img
@@ -310,10 +315,10 @@ class PatteringAugmentation:
 
 class OriginalAugSet:
     @classmethod
-    def getBinarization(cls,val = 0.):
+    def getBinarization(cls,val = 0.0):
         def bin(img):
-            return (img > val) + 0.
-        return bin
+            return ((img > val) + 0.)
+        return transforms.Lambda(bin)
     
 
     # モルフォロジー変換で収縮(フォントは文字部分が0)
@@ -324,14 +329,16 @@ class OriginalAugSet:
     def getContract(cls, size):
         def contract(img):
             kernelsize = (size * 2 + 1)
-            return torch.nn.functional.max_pool2d(img, (kernelsize, kernelsize), stride = 1 , padding = size)
+            img = img.unsqueeze(0)
+            return torch.nn.functional.max_pool2d(img, (kernelsize, kernelsize), stride = 1 , padding = size)[0]
         return transforms.Lambda(contract)
 
     @classmethod 
     def getExpand(cls, size):
         def expand(img):
             kernelsize = (size * 2 + 1)
-            return -1 * torch.nn.functional.max_pool2d(-1 * img, (kernelsize, kernelsize), stride = 1 , padding = size)
+            img = img.unsqueeze(0)
+            return -1 * torch.nn.functional.max_pool2d(-1 * img, (kernelsize, kernelsize), stride = 1 , padding = size)[0]
         return transforms.Lambda(expand)
     
     # すべてを組み合わせたtransformを返す
