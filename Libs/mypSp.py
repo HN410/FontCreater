@@ -286,23 +286,23 @@ class BinarizationWithDerivative(torch.autograd.Function):
 
 
 # style encoderから出力される値で損失をとる
-# feature ... [teacher_n, B, 256*2, 1, 1]
+# feature ... [B, teacher_n 256*2, 1, 1]
 STYLE_LOSS_SAME_FACTOR = 1
 def styleLoss(feature):
-    teacher_n = feature.size()[0]
-    Bn = feature.size()[1]
+    teacher_n = feature.size()[1]
+    Bn = feature.size()[0]
     loss = 0
     if(teacher_n > 1):
         # 同じフォントは同じ値が出るように
         sep = (teacher_n+ 1) // 2
-        feature0 = feature[0:sep+1].mean(0)
-        feature1 = feature[sep:teacher_n].mean(0)
+        feature0 = feature[:,0:sep+1].mean(1)
+        feature1 = feature[:, sep:teacher_n].mean(1)
         loss = loss + STYLE_LOSS_SAME_FACTOR * torch.nn.MSELoss()(feature0, feature1)
         del feature0, feature1
     if( feature.size()[1] > 1):
         # 違うフォントからは違う値が出るように
         # あまり遠い値が出ないように-log(sum(|f-t|))とする
-        feature = feature.mean(0)
+        feature = feature.mean(1)
         loss  = loss - torch.log(torch.nn.L1Loss()(feature, feature[list(range(Bn))[::-1]]))
     return loss
 
