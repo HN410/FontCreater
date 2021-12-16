@@ -69,7 +69,10 @@ class MyPSP(nn.Module):
 
         if self.for_chara_training:
             if self.ver >= 3:
-                return chara_images, self.style_gen(chara_images, None, alpha)
+                res = self.style_gen(chara_images, None, alpha)
+                if(self.useBin):
+                    res = self.Bin(res)
+                return chara_images, res
             else:
                 return chara_images, torch.sigmoid(self.style_gen(chara_images, None, alpha))
         
@@ -107,9 +110,9 @@ class MyPSPLoss(nn.Module):
     # フォントは通常の画像と異なり、訓練画像とぴったり一致するほうがよいので、二乗誤差で試す
     # onSharpはImageSharpLossにかける係数
 
-    MAIN_LOSS_N = 4
+    MAIN_LOSS_N = 1
     SCALE = 2
-    START_SCALE = 4
+    START_SCALE = 1
     FACTOR = 1
 
     # mode = mse, l1, crossE
@@ -264,7 +267,7 @@ class ImageRarePixelLoss(nn.Module):
 # 二値化の代わりにヒンジのLeakyReLUを使った場合と似た挙動をする
 class BinarizationWithDerivative(torch.autograd.Function):
     LEAKY_RELU_A = 0.002
-    FACTOR = 10
+    FACTOR = 1
     @staticmethod
     def forward(ctx, x):
         ans = (x > 0) +0.
@@ -278,7 +281,7 @@ class BinarizationWithDerivative(torch.autograd.Function):
         dLB = (dLdy > 0) + 0. # 微分が大きかった
         dLS = 1-dLB # 微分が小さい
 
-        reduce = dLB * y + dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
+        reduce = dLB * y - dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
         same = dLB * (1-y) - dLS * y # あっているところは少しだけよりその方向に向かうように
 
         return (reduce  + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
