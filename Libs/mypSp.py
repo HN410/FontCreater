@@ -71,7 +71,8 @@ class MyPSP(nn.Module):
             if self.ver >= 3:
                 res = self.style_gen(chara_images, None, alpha)
                 if(self.useBin):
-                    res = self.Bin(res)
+                    res_ = self.Bin(res)
+                    return chara_images, res, res_
                 return chara_images, res
             else:
                 return chara_images, torch.sigmoid(self.style_gen(chara_images, None, alpha))
@@ -88,9 +89,10 @@ class MyPSP(nn.Module):
 
         res =  self.style_gen(chara_images, style_pairs_, alpha)
         if(self.useBin):
-            res = self.Bin(res)
+            res_ = self.Bin(res)
+            return chara_images, style_pairs, res,  res_
 
-        return chara_images, style_pairs, res
+        return chara_images, style_pairs,  res
 
 class SoftCrossEntropy(nn.Module):
     eps = 1e-4
@@ -267,7 +269,7 @@ class ImageRarePixelLoss(nn.Module):
 # 二値化の代わりにヒンジのLeakyReLUを使った場合と似た挙動をする
 class BinarizationWithDerivative(torch.autograd.Function):
     LEAKY_RELU_A = 0.002
-    FACTOR = 1
+    FACTOR = 10
     @staticmethod
     def forward(ctx, x):
         ans = (x > 0) +0.
@@ -280,6 +282,12 @@ class BinarizationWithDerivative(torch.autograd.Function):
 
         dLB = (dLdy > 0) + 0. # 微分が大きかった
         dLS = 1-dLB # 微分が小さい
+
+        # print(x.max(), x.min(), x.mean(), x.var())
+        # print(dLdy.max(), dLdy.min(), dLdy.mean(), dLdy.var())
+
+        dLB = dLB * dLdy
+        dLS = dLS * dLdy * -1
 
         reduce = dLB * y - dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
         same = dLB * (1-y) - dLS * y # あっているところは少しだけよりその方向に向かうように
