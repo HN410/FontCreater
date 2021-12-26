@@ -12,13 +12,19 @@ from StyleGAN.network import *
 
 # 画像を入力とし，それが何の文字かを判別する
 # cycleGANを作るために実装
+# ver 4 以降　モデルの表現力アップ
 class CharaDiscriminator(nn.Module):
     def __init__(self, ver = 3):
         super().__init__()
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
-        load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
+        if(ver >= 4):
+            load_pretrained_weights(self.chara_encoder, 'efficientnet-b3', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
+        else:
+            load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
+                                load_fc=(ver < 2), advprop=False)
+                            
         self.chara_encoder._change_in_channels(1)
     def forward(self, images):
         # teacherとなるmyPSPのself.chara_encoderの出力は
