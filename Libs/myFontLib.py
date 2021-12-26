@@ -28,14 +28,17 @@ class FontTools():
                 data = "".join(data.split("\n"))
             ans.append(data)
         return ans
-    def __getFontCheckStrings__():
+    def __getFontCheckStrings__(useKanji):
         fontCheckStrings = [FontTools.ALPHANUMERICS , FontTools.SIGNS, 
                         FontTools.KANA
                         ]
-        fontCheckStrings += FontTools.__getJISList__()
+        if(useKanji):
+            fontCheckStrings += FontTools.__getJISList__()
         return fontCheckStrings
-    def __init__(self):
-        self.fontCheckStrings = FontTools.__getFontCheckStrings__()
+    
+    # 漢字もデータに含めるならTrue
+    def __init__(self, useKanji = True):
+        self.fontCheckStrings = FontTools.__getFontCheckStrings__(useKanji)
 
     @classmethod
     def getFontPathList(cls):
