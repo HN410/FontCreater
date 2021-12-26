@@ -23,6 +23,7 @@ class CharaDiscriminator(nn.Module):
     def forward(self, images):
         # teacherとなるmyPSPのself.chara_encoderの出力は
         # ほぼ正規化されている(mean ~ 0.075, var ~ 1.1)ので，正規化しなくてよい?
+        # 1/10にしたほうがいい？
         return self.chara_encoder(images)
 
 class MyPSP(nn.Module):
@@ -269,7 +270,7 @@ class ImageRarePixelLoss(nn.Module):
 # 二値化の代わりにヒンジのLeakyReLUを使った場合と似た挙動をする
 class BinarizationWithDerivative(torch.autograd.Function):
     LEAKY_RELU_A = 0.002
-    FACTOR = 10
+    FACTOR = 100
     @staticmethod
     def forward(ctx, x):
         ans = (x > 0) +0.
@@ -278,22 +279,22 @@ class BinarizationWithDerivative(torch.autograd.Function):
     
     @staticmethod
     def backward(ctx, dLdy):
-        x, y = ctx.saved_tensors
+        return dLdy * BinarizationWithDerivative.FACTOR
+        # x, y = ctx.saved_tensors
 
-        dLB = (dLdy > 0) + 0. # 微分が大きかった
-        dLS = 1-dLB # 微分が小さい
+        # dLB = (dLdy > 0) + 0. # 微分が大きかった
+        # dLS = 1-dLB # 微分が小さい
 
-        # print(x.max(), x.min(), x.mean(), x.var())
-        # print(dLdy.max(), dLdy.min(), dLdy.mean(), dLdy.var())
+        # # print(x.max(), x.min(), x.mean(), x.var())
+        # # print(dLdy.max(), dLdy.min(), dLdy.mean(), dLdy.var())
 
-        dLB = dLB * dLdy
-        dLS = dLS * dLdy * -1
+        # dLB = dLB * dLdy
+        # dLS = dLS * dLdy * -1
 
-        reduce = dLB * y - dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
-        same = dLB * (1-y) - dLS * y # あっているところは少しだけよりその方向に向かうように
+        # reduce = dLB * y - dLS * (1-y) # 増やしたいのに0のところ，減らしたいのに1のところ
+        # same = dLB * (1-y) - dLS * y # あっているところは少しだけよりその方向に向かうように
 
-        return (reduce  + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
-        # return (reduce * x + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
+        # return (reduce  + same * BinarizationWithDerivative.LEAKY_RELU_A) * BinarizationWithDerivative.FACTOR
 
 
 # style encoderから出力される値で損失をとる
@@ -314,6 +315,6 @@ def styleLoss(feature):
         # 違うフォントからは違う値が出るように
         # あまり遠い値が出ないように-log(sum(|f-t|))とする
         feature = feature.mean(1)
-        loss  = loss - torch.log(torch.nn.L1Loss()(feature, feature[list(range(Bn))[::-1]]))
+        loss  = loss - torch.log(torch.nn.L1Loss()(feature, feature[list(range(Bn))[::-1]])+ 1e-1)
     return loss
 
