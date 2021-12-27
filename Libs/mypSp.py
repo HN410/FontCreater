@@ -16,12 +16,14 @@ from StyleGAN.network import *
 class CharaDiscriminator(nn.Module):
     def __init__(self, ver = 3):
         super().__init__()
-        blocks_args, global_params = get_model_params('efficientnet-b0', {})
-        self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
         if(ver >= 4):
+            blocks_args, global_params = get_model_params('efficientnet-b3', {})
+            self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
             load_pretrained_weights(self.chara_encoder, 'efficientnet-b3', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
         else:
+            blocks_args, global_params = get_model_params('efficientnet-b0', {})
+            self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
             load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
                             
