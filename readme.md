@@ -2,7 +2,7 @@
 同じフォントの文字の画像をいくつか入力することで，そのフォントの別の文字を推測するモデルです，
 
 
-文字，フォントのエンコードをする部分では[EfficientNet](https://arxiv.org/abs/1905.11946)という画像認識モデル[^1]を，生成する部分では[StyleGAN](https://arxiv.org/abs/1812.04948)という画像生成モデルを用いており，この全体の構成は[pixel2style2pixel](https://arxiv.org/abs/2008.00951)を基にしています．
+文字，フォントのエンコードをする部分では[EfficientNet](https://arxiv.org/abs/1905.11946)という画像認識モデルを，生成する部分では[StyleGAN](https://arxiv.org/abs/1812.04948)という画像生成モデルを用いており，この全体の構成は[pixel2style2pixel](https://arxiv.org/abs/2008.00951)を基にしています．
 
 <div align="center">
     <img src="example.png">
