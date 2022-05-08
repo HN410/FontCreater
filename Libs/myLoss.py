@@ -1,7 +1,9 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
+import random
 
+eps = 1e-7
 def d_lsgan_loss(discriminator, trues, fakes, labels, alpha):
     d_trues = discriminator.forward(trues, labels, alpha)
     d_fakes = discriminator.forward(fakes, labels, alpha)
@@ -58,7 +60,10 @@ def d_wgan_loss2(discriminator,  before,  trues, fakes,  teachers, alpha, phase,
         d_fakes = discriminator(before, fakes, teachers, alpha)
     else:
         d_trues = discriminator(trues, teachers, alpha)
-        d_fakes = discriminator(fakes, teachers, alpha)
+        if(random.random() < 0.2):
+            d_fakes = discriminator(torch.cat((teachers[1:, 0], teachers[0:1, 0])), teachers, alpha)
+        else:
+            d_fakes = discriminator(fakes, teachers, alpha)
     loss_wd =  (torch.nn.LeakyReLU(0.002)(1- d_trues)).mean() +\
          (torch.nn.LeakyReLU(0.002)(1 + d_fakes)).mean()
     TCorrectN = (d_trues > 0).sum().item()
@@ -123,3 +128,10 @@ def g_logistic_loss(discriminator, fakes, labels, alpha):
     d_fakes = discriminator.forward(fakes, labels, alpha)
     return F.softplus(-d_fakes).mean()
 
+
+# 二値でないラベルにも対応したクロスエントロピー
+def myCrossE(out, labels):
+    a = labels * torch.log(out + eps)
+    b = (1.0-labels) * torch.log(1.0 - out + eps)
+    ans = torch.mean(a+b)
+    return (-1.0) * ans
