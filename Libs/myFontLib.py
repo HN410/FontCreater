@@ -41,9 +41,8 @@ class FontTools():
         self.fontCheckStrings = FontTools.__getFontCheckStrings__(useKanji)
 
     @classmethod
-    def getFontPathList(cls):
+    def getFontPathList(cls, dirs = FONTDIRS):
         # Fontsフォルダ内のフォントファイルを一括取得
-        dirs = cls.FONTDIRS
 
         l = []
         for d in dirs:
@@ -289,6 +288,123 @@ class FontChecker():
             box = widgets.Box(checkBoxList[i*columns: (i+1)*columns])
             display(box)
         display(output)
+
+        plt.close()
+
+        buttonNext.click()
+
+class FontStyleCheckImageProducer():
+    # フォントを確認する用の画像を作るクラス
+
+    maxCharas = 180 # チェック時に見る最大文字数
+    charasHorizontalN = 1  # 横に並べる文字数    
+    imageUnitSize = (200, 200)
+    imageSize = (imageUnitSize[0]*2, imageUnitSize[1]*2)
+    fontSize = 160
+    
+    def __init__(self, fontTools: FontTools):
+        # 文字数が多いカテゴリはランダムにサンプリング
+        self.fontPathList = FontTools.getFontPathList()
+        self.fontCheckStrings = self.__getFontCheckString__(fontTools)
+
+    @staticmethod
+    def __getFontCheckString__(fontTools: FontTools):
+        fontCheckStrings = fontTools.fontCheckStrings
+        ans = [""] * 4
+        ans[0] = fontCheckStrings[0][3]
+        ans[1] = fontCheckStrings[0][10]
+        for i in range(1, 3):
+            ans[i+1] = fontCheckStrings[i+1][0]
+        return ans
+    
+    def getFontImage(self, ind):
+        font_path = self.fontPathList[ind]
+        font = PIL.ImageFont.truetype(font_path, self.fontSize)
+
+        image = PIL.Image.new('RGBA', self.imageSize, 'white')
+        draw = PIL.ImageDraw.Draw(image)
+        for i, string in enumerate(self.fontCheckStrings):
+            draw.text(((self.imageUnitSize[0]) * (i % 2), (self.imageUnitSize[1]) * (i // 2)),
+                    string,
+                    font=font,
+                    fill='black')
+
+        return image
+
+class FontStyleChecker():
+    # フォントを表示しながら、どれに対応するかを記録していくGUI
+    defaultListIndex = ["太さ", "とがり", "明朝", "幅不定", "ゴシック",
+                         "手書き", "まるみ", "角ばり", "中抜き", "ドット",
+                          "途切れ", "線入り", "虫食い", "非正方形", "斜体",
+                           "歪み", "細長","筆記体", "ホラー", "ポイント", ]
+    checkListColumns = 2
+    def __init__(self, fontStyleCheckImageProducer):
+        self.fontN = 0
+        self.nowInd = 170
+        self.fontList =  FontTools.getFontPathList()
+        self.fontN = len(self.fontList)
+        self.data = { i: [False for j in range(len(FontStyleChecker.defaultListIndex))] for i in self.fontList}
+        if(os.path.exists("styleChecker.pkl")):
+            with open("styleChecker.pkl", "br") as f:
+                self.data = pickle.load(f)
+        self.fontCheckImageProducer = fontStyleCheckImageProducer
+    
+    def __output__(self, ax, output):
+        ax.clear()
+        ax.imshow(self.fontCheckImageProducer.getFontImage(self.nowInd))
+        with output:
+            output.clear_output(wait=True)
+            display(ax.figure)
+    def __registerData__(self, checkBoxList):
+        self.data[self.fontList[self.nowInd]] = [i.value for i in checkBoxList]
+    
+    def saveData(self, path):
+        with open(path, "wb") as f:
+            pickle.dump(self.data, f)
+
+    def showWidgets(self):
+        buttonNext = widgets.Button(description='Next')
+        buttonPrev = widgets.Button(description='Prev')
+        buttonSave = widgets.Button(description='Save')
+
+        checkBoxList = [ widgets.FloatSlider(value= 0.0, min = 0.0, max = 1.0, step = 0.01, description = i) for i in self.defaultListIndex]
+        
+        output = widgets.Output()
+        plt.figure(figsize = (8, 8))
+        ax = plt.gca()
+
+
+        def onClickNext(b: widgets.Button):
+            if(self.nowInd == self.fontN-1):
+                return
+            self.__registerData__(checkBoxList)
+            self.nowInd += 1
+            self.__output__(ax, output)
+        
+        def onClickPrev(b: widgets.Button):
+            if(self.nowInd == 0):
+                return
+            self.__registerData__(checkBoxList)
+            self.nowInd -= 1
+            self.__output__(ax, output)
+        
+        def onClickSave(b: widgets.Button):
+            self.__registerData__(checkBoxList)
+            self.saveData("styleChecker.pkl")
+            with output:
+                print(self.nowInd)
+
+
+        buttonNext.on_click(onClickNext)
+        buttonPrev.on_click(onClickPrev)
+        buttonSave.on_click(onClickSave)
+        buttonBox = widgets.Box([buttonPrev, buttonNext, buttonSave])
+        columns = self.checkListColumns
+        checkList = []
+        for i in range(len(self.defaultListIndex)//columns):
+            box = widgets.Box(checkBoxList[i*columns: (i+1)*columns])
+            checkList.append(box)
+        display(widgets.Box([widgets.VBox([output, buttonBox]), widgets.VBox(checkList)]))
 
         plt.close()
 

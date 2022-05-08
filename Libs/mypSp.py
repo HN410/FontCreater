@@ -1,5 +1,6 @@
 
 from Libs.myFontData import FontGeneratorDataset
+from Libs.myFontLib import FontStyleChecker
 import torch
 import torch.nn as nn
 import sys
@@ -13,7 +14,10 @@ from StyleGAN.network import *
 # 画像を入力とし，それが何の文字かを判別する
 # cycleGANを作るために実装
 # ver 4 以降　モデルの表現力アップ
+FEATURE_V_N = 256
 class CharaDiscriminator(nn.Module):
+    B3_CHANNEL_N = 384
+    OUT_CHANNEL_N = 320
     def __init__(self, ver = 3):
         super().__init__()
         if(ver >= 4):
@@ -21,18 +25,72 @@ class CharaDiscriminator(nn.Module):
             self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
             load_pretrained_weights(self.chara_encoder, 'efficientnet-b3', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
+            self.last_conv = nn.Conv2d(in_channels=self.B3_CHANNEL_N, out_channels=self.OUT_CHANNEL_N, kernel_size=1)
+            batch_norm_momentum=0.99
+            batch_norm_epsilon=1e-3
+            self.bn = nn.BatchNorm2d(num_features=self.OUT_CHANNEL_N, momentum=batch_norm_momentum, eps=batch_norm_epsilon)
         else:
             blocks_args, global_params = get_model_params('efficientnet-b0', {})
             self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
             load_pretrained_weights(self.chara_encoder, 'efficientnet-b0', weights_path=None,
                                 load_fc=(ver < 2), advprop=False)
+            self.last_conv = None
                             
         self.chara_encoder._change_in_channels(1)
     def forward(self, images):
         # teacherとなるmyPSPのself.chara_encoderの出力は
         # ほぼ正規化されている(mean ~ 0.075, var ~ 1.1)ので，正規化しなくてよい?
         # 1/10にしたほうがいい？
-        return self.chara_encoder(images)
+        ans = self.chara_encoder(images)
+        if(self.last_conv is not None):
+            return self.bn(self.last_conv(ans))
+        else:
+            return ans
+
+# Styleの特徴量を入力として，それぞれの要素の値のテンソルで返す
+class StyleDiscriminator(nn.Module):
+    OUT_F_N = len(FontStyleChecker.defaultListIndex)
+    IN_F_N = FEATURE_V_N * 2
+    MID_F_N = [256, 128, 64, 32]
+    DIVID_N = 4 
+    USE_DIVID_N = 2 # 全結合層を使わない層数
+    def __init__(self):
+        # 全結合層を使う代わりに，特徴量をDIVID_N個の組に分けてそこでしばらく全結合させてみる
+        super().__init__()
+        self.activation = nn.LeakyReLU(negative_slope=0.2)
+        self.linear1s = nn.ModuleList([nn.Linear(self.IN_F_N // self.DIVID_N, self.MID_F_N[0] // self.DIVID_N) for i in range(self.DIVID_N)])
+        self.linear2s = nn.ModuleList([nn.Linear(self.MID_F_N[0] // self.DIVID_N, self.MID_F_N[1] // self.DIVID_N)for i in range(self.DIVID_N)])
+        self.linear3s = nn.Linear(self.MID_F_N[1], self.MID_F_N[2])
+        self.linear4s = nn.Linear(self.MID_F_N[2], self.MID_F_N[3])
+        self.bn0 = nn.BatchNorm1d(self.MID_F_N[1])
+        self.bn1 = nn.BatchNorm1d(self.OUT_F_N)
+        self.last = nn.Linear(self.MID_F_N[3], self.OUT_F_N)
+        self.lastActivation = nn.Sigmoid()
+
+    def forward(self, features):
+        # 入力　[B, teachersN, 256 * 2, 1, 1]
+        # 出力  [B, len(list)]
+        
+        # teachersNで平均をとってしまう
+        features = features.mean(1)[:, :, 0, 0]
+        # 分解してそれぞれで計算
+        features = torch.split(features, self.IN_F_N // self.DIVID_N, 1)
+        features = [self.activation(self.linear1s[i](features[i])) for i in range(self.DIVID_N)]
+        features = [self.linear2s[i](features[i]) for i in range(self.DIVID_N)]
+
+        # 結合
+        features = torch.cat(features, 1)
+        if(features.shape[0] != 1):
+            features = self.bn0(features)
+        features = self.activation(features)
+        
+        features = self.activation(self.linear3s(features))
+        features = self.activation(self.linear4s(features))
+
+        raw = self.last(features)
+        # if(features.shape[0] != 1):
+        #     raw = self.bn1(raw)
+        return self.lastActivation(raw), raw
 
 class MyPSP(nn.Module):
     # 複数画像からフォントを構成するモデル
@@ -41,7 +99,7 @@ class MyPSP(nn.Module):
         # style_encoder ... 複数のフォントの組からスタイル情報をエンコード
         # style_gen ... エンコーダから得られた情報をもとにフォントを構成
         super().__init__()
-        self.z_dim = 256 # エンコーダから渡される特徴量の個数
+        self.z_dim = FEATURE_V_N # エンコーダから渡される特徴量の個数
         blocks_args, global_params = get_model_params('efficientnet-b0', {})
         self.chara_encoder = EfficientNetEncoder(blocks_args, global_params, isForCharacter=True, ver=ver)
         self.style_encoder = EfficientNetEncoder(blocks_args, global_params, ver = ver, useBNform2s = useBNform2s)
@@ -54,9 +112,16 @@ class MyPSP(nn.Module):
         gen_settings = get_setting_json()
         self.style_gen = Generator(gen_settings["network"], ver=ver, dropout_p=dropout_p)
         self.for_chara_training = False
+        self.for_style_training = False
         self.ver = ver
         self.useBin = useBin
         self.Bin =BinarizationWithDerivative.apply
+    def load_pretrained_weights_only_style(self):
+        self.style_encoder._change_in_channels(3)
+        load_pretrained_weights(self.style_encoder, 'efficientnet-b0', weights_path=None,
+                        load_fc=(False), advprop=False)
+        self.style_encoder._change_in_channels(1)
+    
     
     def set_level(self, level):
         self.style_gen.set_level(level)
@@ -65,6 +130,9 @@ class MyPSP(nn.Module):
         # 文字のエンコードデコードのみを訓練するとき
         self.style_gen.set_for_chara_training(b)
         self.for_chara_training = b
+    def set_for_style_training(self, b):
+        # フォントのエンコードデコードのみを訓練するとき
+        self.for_style_training = b
     
     def forward(self, chara_images,  style_pairs, alpha):
         # chara_image ... 変換したい文字のMSゴシック体の画像
@@ -74,7 +142,8 @@ class MyPSP(nn.Module):
         # alpha ... どれだけ変化させるかの係数？バッチで共通なため、サイズは[1, 1]
 
         # 文字をエンコード [B, 256*6, 1, 1](ver1) or [B, 320, 8, 8](ver2)
-        chara_images = self.chara_encoder(chara_images)
+        if(not self.for_style_training):
+            chara_images = self.chara_encoder(chara_images)
 
         if self.for_chara_training:
             if self.ver >= 3:
@@ -91,9 +160,11 @@ class MyPSP(nn.Module):
         if(self.ver <= 3):
             style_pairs = style_pairs[:, :, 1] -  style_pairs[:, :, 0]
         # 文字ごとにencoderにかけ、その特徴量を総和する [B, 256*2, 1, 1]
-        style_pairs = torch.stack([self.style_encoder(style_pairs[:, i]) for i in range(pair_n)])
+        style_pairs = torch.stack([self.style_encoder(style_pairs[:, i]) for i in range(pair_n)], dim = 1)
+        if(self.for_style_training):
+            return None, style_pairs,  None, None
 
-        style_pairs_ = style_pairs.mean(0)
+        style_pairs_ = style_pairs.mean(1)
 
 
         res =  self.style_gen(chara_images, style_pairs_, alpha)
@@ -231,8 +302,8 @@ class ImageRarePixelLoss(nn.Module):
 
     #  正規化する前に入力すること
     TEACHER_LIM = 0.5
-    UPPER_LIM = 0.8
-    LOWER_LIM = 0.2
+    UPPER_LIM = 0.7
+    LOWER_LIM = 0.3
     eps = 1e-3
 
     def __init__(self, separateN = 1):
@@ -240,16 +311,17 @@ class ImageRarePixelLoss(nn.Module):
         self.separateN = separateN
     
     def getSectionLoss(self, reversedSize, outputs, teachers):
-        uIndex = (teachers.mean(dim = (1, 2, 3)) >self.TEACHER_LIM).broadcast_to(reversedSize).T
-        uValue = torch.mul(torch.lt(teachers, self.LOWER_LIM), torch.log(outputs + self.eps))
+        uIndex = (teachers.mean(dim = (1, 2, 3)) >self.UPPER_LIM).broadcast_to(reversedSize).T
+        uValue = torch.mul(torch.lt(teachers, self.LOWER_LIM), torch.log(1 - outputs + self.eps))
         uAns = torch.mul(uIndex, uValue).mean() # -log x
-        lIndex = (teachers.mean(dim = (1, 2, 3)) <-1*self.TEACHER_LIM).broadcast_to(reversedSize).T
-        lValue = torch.mul(torch.gt(teachers, self.UPPER_LIM), torch.log(1-outputs + self.eps))
+        lIndex = (teachers.mean(dim = (1, 2, 3)) <self.LOWER_LIM).broadcast_to(reversedSize).T
+        lValue = torch.mul(torch.gt(teachers, self.UPPER_LIM), torch.log(outputs + self.eps))
         lAns = torch.mul(lIndex, lValue).mean() # -log(1-x)
         return -1 *lAns-uAns 
 
     
     def forward(self, outputs, teachers):
+        teachers = teachers * FontGeneratorDataset.IMAGE_VAR + FontGeneratorDataset.IMAGE_MEAN
         size = tuple(teachers.size())
         reversedSize = tuple(reversed(size))
         if(self.separateN == 1):
@@ -278,7 +350,7 @@ class ImageRarePixelLoss(nn.Module):
 # 二値化の代わりにヒンジのLeakyReLUを使った場合と似た挙動をする
 class BinarizationWithDerivative(torch.autograd.Function):
     LEAKY_RELU_A = 0.002
-    FACTOR = 100
+    FACTOR = 1
     @staticmethod
     def forward(ctx, x):
         ans = (x > 0) +0.

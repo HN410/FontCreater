@@ -20,7 +20,7 @@ class FontGeneratorDataset(data.Dataset):
 
     IMAGE_WH = 256
 
-    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list,\
+    def __init__(self, fontTools: FontTools, compatibleDict: dict, imageN : list, styleDict: dict,\
          useTensor=True, startInd = 0, indN = None, isForValid = None, augmentationP = None, originalAugmentationP = None,):
         #  fontTools ... FontTools
         #  compatibleDict ... 各フォントごとに対応している文字のリストを紐づけたディクショナリ
@@ -35,6 +35,7 @@ class FontGeneratorDataset(data.Dataset):
         self.fontTools = fontTools
         self.fontList = FontTools.getFontPathList()
         self.compatibleDict = compatibleDict
+        self.styleDict = styleDict
         self.imageN = imageN
         self.resetSampleN()
         self.useTensor = useTensor
@@ -75,15 +76,17 @@ class FontGeneratorDataset(data.Dataset):
         charaChooser = CharacterChooser(self.fontTools, self.fontList[index],
                 self.compatibleDict[self.fontList[index]], useTensor=self.useTensor)
         beforeNormalize= None
+        styleChangeList0 = [False, False] # 非正方形, ノイズ
+        styleChangeList1 = [False] * OriginalAugSet.TRANSFORM_N
         if(self.augmentationP is not  None):
 
-            beforeNormalize = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
+            beforeNormalize, styleChangeList = MyPSPAugmentation.getTransform(self.IMAGE_WH, self.augmentationP)
         if(self.originalAugmentationP):
             if(beforeNormalize):
                 beforeNormalize = [beforeNormalize]
             else:
                 beforeNormalize =[]
-            aug = OriginalAugSet.getAll(self.originalAugmentationP)
+            aug, styleChangeList1 = OriginalAugSet.getAll(self.originalAugmentationP)
             if(aug):
                 beforeNormalize.append(aug)
             beforeNormalize = transforms.Compose(beforeNormalize)
@@ -100,8 +103,47 @@ class FontGeneratorDataset(data.Dataset):
 
         convertedPair = imageList[0]
         teachers = torch.stack([torch.stack(i, 0) for i in imageList[1:]], 0)
+
+        # Style情報
+        styleLabel = torch.tensor(self.styleDict[self.fontList[index]])
+        styleLabel = self.getModifiedStyleLabel(styleLabel, styleChangeList0, styleChangeList1)
         
-        return [convertedPair, teachers]
+        return [convertedPair, teachers, styleLabel]
+
+    @classmethod
+    def getModifiedStyleLabel(cls, label, changeList0, changeList1):
+        # augmentationで変わった分ラベルも修正する
+        if(changeList0[0]):
+            # アフィン変換など
+            label[13] = min(label[13] + 0.2, 1.0)
+        if(changeList0[1]):
+            # ノイズ
+            label[12] = min(label[12] + 0.2, 1.0)
+        if(changeList1[0]):
+            # ラプラシアン
+            label[8] = 1.0
+        if(changeList1[1]):
+            # 膨張
+            label[0] = min(label[0] + 0.1, 1.0)
+        if(changeList1[2]):
+            # 収縮
+            label[0] = max(label[0] - 0.1, 0.0)
+        if(changeList1[3]):
+            # line
+            label[11] = min(label[11] + 0.6, 1.0)
+            label[10] = min(label[10] + 0.2, 1.0)
+        if(changeList1[4]):
+            # circle
+            label[12] = min(label[12] + 0.5, 1.0)
+        if(changeList1[5]):
+            # noise
+            label[12] = min(label[12] + 0.2, 1.0)
+        if(changeList1[6]):
+            # circle
+            label[6] = min(label[6] + 0.2, 1.0)
+            label[7] = max(label[7] - 0.2, 0.0)
+            label[15] = min(label[15] + 0.2, 1.0)
+        return label
     
     def getInputListForV(self):
         # validationように常に固定された入力が出るよう、このデータセットに設定するディクショナリを作る
@@ -209,11 +251,12 @@ class MyPSPAugmentation:
 
     @classmethod
     def getTransform(cls, imageWH, probs, device = "cpu"):
+        #画像，確率を受け取って変形した画像，[変形したか, ノイズが載ったか]どうかを返す
         useAffine = random.random() < probs[0]
         usePerspective = random.random() < probs[1]
         useNoise = random.random() < probs[2]
         if(not(useAffine or usePerspective or useNoise)):
-            return None
+            return None, [False, False]
         angle =  translate =  scale = shear =  interpolation = None
         if(useAffine):
             angle = random.uniform(-1*cls.ROTATE_LIMIT, cls.ROTATE_LIMIT)
@@ -247,20 +290,20 @@ class MyPSPAugmentation:
                 new  = img+ 20*cls.NOISE_STRENGTH* torch.randn(size, device=device)
                 return new
             return img
-        return transforms.Lambda(transpose)
+        return transforms.Lambda(transpose), [useAffine or usePerspective, useNoise]
     
     @classmethod
     def getNoisedImages(cls, data, prob, device = "cpu"):
-        # データ郡を受け取って、確率でノイズの入ったデータを返す
+        # データ郡を受け取って、確率でノイズの入ったデータ(とノイズが載ったか)を返す
         # teachers [B, teachersN, 1, 256, 256]
-        transform = cls.getTransform(256, [0, 0, prob], device)
+        transform, boolList = cls.getTransform(256, [0, 0, prob], device)
         if(transform is None):
             return data
         ans = []
         for e in data:
             ans.append(transform(e))
 
-        return ans
+        return ans, boolList[1]
         
 # augmentation で，入力されるimgはshapeが[1, 1, 356, 256] だったり，[1, 256, 256]だったりするので注意
 class ConvAugmentation:
@@ -381,6 +424,7 @@ class DistortingAugmentation:
     
 
 class OriginalAugSet:
+    TRANSFORM_N = 7
     @classmethod
     def getBinarization(cls,val = 0.0):
         def bin(img):
@@ -408,34 +452,43 @@ class OriginalAugSet:
             return -1 * torch.nn.functional.max_pool2d(-1 * img, (kernelsize, kernelsize), stride = 1 , padding = size)[0]
         return transforms.Lambda(expand)
     
-    # すべてを組み合わせたtransformを返す
+    # すべてを組み合わせたtransformとtransformしたかのリストを返す
     # pList ... それぞれが適用される確率
     # [ラプラス, expand or contract, line, circle, noise, wave]
+    # boolListは上のうち，expand, contractになったもの
     @classmethod
     def getAll(cls, pList, size = 256, device = "cpu"):
         ans = []
         useLaplace = pList[0] > random.random()
+        boolList = [False] * cls.TRANSFORM_N
         if(useLaplace):
             ans.append(ConvAugmentation.getTransformRandom(device))
+            boolList[0] = True
         if(pList[1] > random.random()):
             if(0.5 >random.random() and (not useLaplace)):
                 ans.append(cls.getContract(1))
+                boolList[2] = True
             else:
                 ans.append(cls.getExpand(random.randint(1, 3)))
+                boolList[1] = True
         if(pList[2] > random.random()):
             ans.append(PatteringAugmentation.getPaintAugmentation(size, "line", device))
+            boolList[3] = True
         if(pList[3] > random.random() and (not useLaplace)):
             ans.append(PatteringAugmentation.getPaintAugmentation(size, "circle", device))
+            boolList[4] = True
         if(pList[4] > random.random() and (not useLaplace)):
             ans.append(PatteringAugmentation.getPaintAugmentation(size, "noise", device))
+            boolList[5] = True
         if(pList[5] > random.random()):
             ans.append(DistortingAugmentation.getWaving(size))
+            boolList[6] = True
 
         if(ans !=  []):
             ans.append(cls.getBinarization())
-            return transforms.Compose(ans)
+            return transforms.Compose(ans), boolList
         else:
-            return None
+            return None, boolList
 
     
         
